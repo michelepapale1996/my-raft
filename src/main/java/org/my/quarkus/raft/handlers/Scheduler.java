@@ -1,11 +1,23 @@
 package org.my.quarkus.raft.handlers;
 
+import org.my.quarkus.raft.api.AppendEntriesRequest;
+import org.my.quarkus.raft.api.AppendEntriesResponse;
+import org.my.quarkus.raft.client.ServerRestClient;
+import org.my.quarkus.raft.model.cluster.RaftServer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 public class Scheduler {
+    private static final Logger logger = LoggerFactory.getLogger(Scheduler.class);
     private final ScheduledExecutorService leaderExecutorService = Executors.newScheduledThreadPool(1);
     private final ScheduledExecutorService heartbeatExecutorService = Executors.newScheduledThreadPool(1);
     private final int lowerBoundElectionTimeout;
@@ -29,9 +41,17 @@ public class Scheduler {
         );
     }
 
+    // todo: do I really like this synchronized?
+    public synchronized Future<?> scheduleNow(Runnable runnable) {
+        return heartbeatExecutorService.submit(runnable);
+    }
+
     public synchronized void startSendingHeartbeats() {
         scheduledFuture = heartbeatExecutorService.scheduleAtFixedRate(
-                new HeartbeatHandler(),
+                () -> {
+                    logger.info("Sending heartbeats to followers...");
+                    RaftServer.getInstance().triggerHeartbeat();
+                },
                 heartbeatTimeout,
                 heartbeatTimeout,
                 TimeUnit.MILLISECONDS

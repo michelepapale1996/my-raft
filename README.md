@@ -18,3 +18,5 @@ export JAVA_HOME=/Users/michele.papale/.asdf/installs/java/openjdk-17; export cl
 ## Open points
 - [ ] Add tests
 - [ ] Ensure consistency and isolation of the algorithm
+- [ ] Whenever a client issues a command, validation must be performed to ensure that the node is the leader
+- [ ] The client set request is synchronous to the heartbeating mechanism

@@ -1,4 +1,4 @@
 package org.my.quarkus.raft.api;
 
-public record AppendEntriesResponse(long term, boolean success) {
+public record AppendEntriesResponse(int term, boolean success) {
 }

@@ -5,8 +5,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.my.quarkus.raft.handlers.Scheduler;
-import org.my.quarkus.raft.model.ClusterState;
-import org.my.quarkus.raft.model.RaftServer;
+import org.my.quarkus.raft.model.cluster.ClusterState;
+import org.my.quarkus.raft.model.cluster.RaftServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

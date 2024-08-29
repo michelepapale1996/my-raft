@@ -4,9 +4,13 @@ import org.my.quarkus.raft.api.AppendEntriesRequest;
 import org.my.quarkus.raft.api.AppendEntriesResponse;
 import org.my.quarkus.raft.api.RequestVoteRequest;
 import org.my.quarkus.raft.api.RequestVoteResponse;
-import org.my.quarkus.raft.model.RaftServer;
+import org.my.quarkus.raft.model.cluster.RaftServer;
+import org.my.quarkus.raft.model.log.LogEntry;
+import org.my.quarkus.raft.model.state.machine.StateMachineCommand;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Optional;
 
 public enum RequestHandler {
     INSTANCE;
@@ -30,12 +34,13 @@ public enum RequestHandler {
             return new AppendEntriesResponse(raftServer.getCurrentTerm(), false);
         } else {
             raftServer.switchToFollower(); // in this way, if I was a candidate I will become a follower
+
             raftServer.setCurrentTerm(appendEntriesRequest.term());
             raftServer.setVotedFor(appendEntriesRequest.serverId());
 
             raftServer.setReceivedHeartbeat();
 
-            return new AppendEntriesResponse(appendEntriesRequest.term(), true);
+            return raftServer.accept(appendEntriesRequest);
         }
     }
 
@@ -46,12 +51,24 @@ public enum RequestHandler {
             return new RequestVoteResponse(raftServer.getCurrentTerm(), false);
         }
 
-        if (raftServer.getVotedFor().isEmpty() || raftServer.getVotedFor().get().equals(requestVoteRequest.candidateId())) {
+        Optional<String> votedForOptional = raftServer.getVotedFor();
+        LogEntry logEntry = raftServer.getLog().get(requestVoteRequest.lastLogIndex());
+        if (
+                (votedForOptional.isEmpty() || votedForOptional.get().equals(requestVoteRequest.candidateId())) &&
+                        logEntry == null || logEntry.term() == requestVoteRequest.lastLogTerm()) {
             raftServer.switchToFollower();
             raftServer.setCurrentTerm(requestVoteRequest.term());
             raftServer.setVotedFor(requestVoteRequest.candidateId());
             return new RequestVoteResponse(requestVoteRequest.term(), true);
         }
         return new RequestVoteResponse(raftServer.getCurrentTerm(), false);
+    }
+
+    public StateMachineCommand get(String key) {
+        return new StateMachineCommand(key, raftServer.getStateMachine().get(key));
+    }
+
+    public void set(StateMachineCommand object) {
+        raftServer.set(object.key(), object.value());
     }
 }
