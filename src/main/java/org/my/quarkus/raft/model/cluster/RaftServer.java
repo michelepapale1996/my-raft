@@ -237,6 +237,8 @@ public class RaftServer {
                         this.switchToFollower();
                         this.setCurrentTerm(maxTerm);
                     } else {
+                        Optional<LogEntry> lastLogEntry = log.lastLogEntry();
+
                         for (Map.Entry<String, AppendEntriesResponse> entry: responsesByServer.entrySet()) {
                             String serverId = entry.getKey();
                             AppendEntriesResponse response = entry.getValue();
@@ -244,8 +246,10 @@ public class RaftServer {
                             maxTerm = Math.max(maxTerm, response.term());
 
                             if (response.success()) {
-                                nextIndexByHost.put(serverId, log.lastLogEntry().index() + 1);
-                                matchIndexByHost.put(serverId, log.lastLogEntry().index());
+                                if (lastLogEntry.isPresent()) {
+                                    nextIndexByHost.put(serverId, lastLogEntry.get().index() + 1);
+                                    matchIndexByHost.put(serverId, lastLogEntry.get().index());
+                                }
                             } else {
                                 nextIndexByHost.put(serverId, nextIndexByHost.get(serverId) - 1);
                             }
@@ -255,15 +259,15 @@ public class RaftServer {
                         //of matchIndex[i] ≥ N, and log[N].term == currentTerm: set commitIndex = N
                         List<Integer> matchIndexes = matchIndexByHost.values().stream().sorted().toList();
                         int N = matchIndexes.get(matchIndexes.size() / 2);
-                        if (N > commitIndex.get() && log.get(N).term() == currentTerm.get()) {
+                        if (N > commitIndex.get() && log.get(N).isPresent() && log.get(N).get().term() == currentTerm.get()) {
                             commitIndex.set(N);
                         }
 
                         // If commitIndex > lastApplied: increment lastApplied, apply log[lastApplied] to state machine (§5.3)
                         if (commitIndex.get() > lastApplied.get()) {
                             for (int i = lastApplied.get() + 1; i <= commitIndex.get(); i++) {
-                                LogEntry logEntry = log.get(i);
-                                stateMachine.apply(logEntry.command());
+                                Optional<LogEntry> logEntry = log.get(i);
+                                logEntry.ifPresent(entry -> stateMachine.apply(entry.command()));
                             }
                             lastApplied.set(commitIndex.get());
                         }
@@ -296,7 +300,8 @@ public class RaftServer {
             throw new IllegalStateException("I'm a leader, I cannot accept append entries");
         }
 
-        if (log.get(appendEntriesRequest.prevLogIndex()).term() != appendEntriesRequest.prevLogTerm()) {
+        if (log.get(appendEntriesRequest.prevLogIndex()).isPresent() &&
+                log.get(appendEntriesRequest.prevLogIndex()).get().term() != appendEntriesRequest.prevLogTerm()) {
             return new AppendEntriesResponse(this.currentTerm.get(), false);
         } else {
             for (LogEntry entry: appendEntriesRequest.entries()) {
@@ -304,14 +309,19 @@ public class RaftServer {
             }
 
             if (appendEntriesRequest.leaderCommit() > commitIndex.get()) {
-                commitIndex.set(Math.min(appendEntriesRequest.leaderCommit(), log.lastLogEntry().index()));
+                int lastLogEntryIndex = 0;
+                if (log.lastLogEntry().isPresent()) {
+                    lastLogEntryIndex = log.lastLogEntry().get().index();
+                }
+                commitIndex.set(Math.min(appendEntriesRequest.leaderCommit(), lastLogEntryIndex));
             }
 
             // apply the command to the state machine if commitIndex > lastApplied
             if (commitIndex.get() > lastApplied.get()) {
                 for (int i = lastApplied.get() + 1; i <= commitIndex.get(); i++) {
-                    LogEntry logEntry = log.get(i);
-                    stateMachine.apply(logEntry.command());
+                    Optional<LogEntry> logEntry = log.get(i);
+                    logEntry.ifPresent(it -> stateMachine.apply(it.command()));
+
                 }
                 lastApplied.set(commitIndex.get());
             }

@@ -52,10 +52,10 @@ public enum RequestHandler {
         }
 
         Optional<String> votedForOptional = raftServer.getVotedFor();
-        LogEntry logEntry = raftServer.getLog().get(requestVoteRequest.lastLogIndex());
+        Optional<LogEntry> logEntry = raftServer.getLog().get(requestVoteRequest.lastLogIndex());
         if (
                 (votedForOptional.isEmpty() || votedForOptional.get().equals(requestVoteRequest.candidateId())) &&
-                        logEntry == null || logEntry.term() == requestVoteRequest.lastLogTerm()) {
+                        (logEntry.isEmpty() || logEntry.get().term() == requestVoteRequest.lastLogTerm())) {
             raftServer.switchToFollower();
             raftServer.setCurrentTerm(requestVoteRequest.term());
             raftServer.setVotedFor(requestVoteRequest.candidateId());
