@@ -45,20 +45,6 @@ public class RaftServer {
     private ClusterState clusterState;
     private Scheduler scheduler;
 
-    // fields used by all servers
-    private final UUID uuid = UUID.randomUUID();
-    private final Log log = new Log();
-
-    private final AtomicInteger currentTerm = new AtomicInteger(0);
-    private volatile ServerRole status = ServerRole.FOLLOWER;
-
-    // index of the highest log entry known to be committed (initialized to 0, increases monotonically)
-    private final AtomicInteger commitIndex = new AtomicInteger(0);
-
-    // index of the highest log entry applied to state machine (initialized to 0, increases monotonically)
-    private AtomicInteger lastApplied = new AtomicInteger(0);
-
-    private final StateMachine stateMachine = new StateMachine();
 
     // fields used by followers and candidates
     private volatile Optional<String> votedFor = Optional.empty();
@@ -73,6 +59,17 @@ public class RaftServer {
     // for each server, index of the highest log entry known to be replicated on server
     // (initialized to 0, increases monotonically)
     private final Map<String, Integer> matchIndexByHost = new ConcurrentHashMap<>();
+
+    // fields used by all servers
+    private final UUID uuid = UUID.randomUUID();
+    private final Log log = new Log();
+    private final StateMachine stateMachine = new StateMachine();
+    private volatile ServerRole status = ServerRole.FOLLOWER;
+    private final AtomicInteger currentTerm = new AtomicInteger(0);
+    // index of the highest log entry known to be committed (initialized to 0, increases monotonically)
+    private final AtomicInteger commitIndex = new AtomicInteger(-1);
+    // index of the highest log entry applied to state machine (initialized to 0, increases monotonically)
+    private final AtomicInteger lastApplied = new AtomicInteger(-1);
 
     public void start() {
         assert clusterState != null;
@@ -139,18 +136,14 @@ public class RaftServer {
         for (String serverId: clusterState.getServerRestClientsByHostName().keySet()) {
             Optional<LogEntry> entry = log.lastLogEntry();
             if (entry.isEmpty()) {
-                nextIndexByHost.put(serverId, 1);
+                nextIndexByHost.put(serverId, 0);
             } else {
                 nextIndexByHost.put(serverId, entry.get().index() + 1);
             }
-            matchIndexByHost.put(serverId, 0);
+            matchIndexByHost.put(serverId, -1);
         }
 
         scheduler.startSendingHeartbeats();
-    }
-
-    public void setReceivedHeartbeat() {
-        receivedHeartbeat.set(true);
     }
 
     public boolean hasReceivedHeartbeat() {
@@ -167,7 +160,6 @@ public class RaftServer {
 
     private Map<String, AppendEntriesRequest> buildAppendEntriesRequests() {
         Map<String, AppendEntriesRequest> appendEntriesRequests = new HashMap<>();
-
 
         Optional<LogEntry> logEntry = log.lastLogEntry();
         int prevLogIndex = 0;
@@ -222,72 +214,95 @@ public class RaftServer {
 
     public Future<?> triggerHeartbeat() {
         Map<String, AppendEntriesRequest> appendEntriesRequestsForOtherHosts = buildAppendEntriesRequests();
+        logger.info("Computed append entries requests for other hosts: {}", appendEntriesRequestsForOtherHosts);
 
         return scheduler.scheduleNow(
                 () -> {
-                    Map<String, AppendEntriesResponse> responsesByServer = performRequests(appendEntriesRequestsForOtherHosts);
+                    try {
+                        Map<String, AppendEntriesResponse> responsesByServer = performRequests(appendEntriesRequestsForOtherHosts);
 
-                    int maxTerm = responsesByServer.values().stream()
-                            .mapToInt(AppendEntriesResponse::term)
-                            .max()
-                            .orElse(this.getCurrentTerm());
+                        int maxTerm = responsesByServer.values().stream()
+                                .mapToInt(AppendEntriesResponse::term)
+                                .max()
+                                .orElse(this.currentTerm.get());
 
-                    if (maxTerm > this.getCurrentTerm()) {
-                        logger.info("Received heartbeat response with a higher term. I will become a follower");
-                        this.switchToFollower();
-                        this.setCurrentTerm(maxTerm);
-                    } else {
-                        Optional<LogEntry> lastLogEntry = log.lastLogEntry();
+                        if (maxTerm > this.currentTerm.get()) {
+                            logger.info("Received heartbeat response with a higher term. I will become a follower");
+                            this.switchToFollower();
+                            this.setCurrentTerm(maxTerm);
+                        } else {
+                            Optional<LogEntry> lastLogEntry = log.lastLogEntry();
 
-                        for (Map.Entry<String, AppendEntriesResponse> entry: responsesByServer.entrySet()) {
-                            String serverId = entry.getKey();
-                            AppendEntriesResponse response = entry.getValue();
+                            for (Map.Entry<String, AppendEntriesResponse> entry : responsesByServer.entrySet()) {
+                                String serverId = entry.getKey();
+                                AppendEntriesResponse response = entry.getValue();
 
-                            maxTerm = Math.max(maxTerm, response.term());
+                                maxTerm = Math.max(maxTerm, response.term());
 
-                            if (response.success()) {
-                                if (lastLogEntry.isPresent()) {
-                                    nextIndexByHost.put(serverId, lastLogEntry.get().index() + 1);
-                                    matchIndexByHost.put(serverId, lastLogEntry.get().index());
+                                if (response.success()) {
+                                    if (lastLogEntry.isPresent()) {
+                                        int nextIndex = lastLogEntry.get().index() + 1;
+                                        int matchIndex = lastLogEntry.get().index();
+                                        logger.info("Received success response from follower {}. " +
+                                                "NextIndex: {}; matchIndex: {}", serverId, nextIndex, matchIndex);
+                                        nextIndexByHost.put(serverId, nextIndex);
+                                        matchIndexByHost.put(serverId, matchIndex);
+                                    }
+                                } else {
+                                    int nextIndex = nextIndexByHost.get(serverId) - 1;
+                                    int matchIndex = matchIndexByHost.get(serverId);
+                                    logger.info("Received failure response from follower {}. " +
+                                            "NextIndex: {}; matchIndex: {}", serverId, nextIndex, matchIndex);
+                                    nextIndexByHost.put(serverId, nextIndex);
                                 }
-                            } else {
-                                nextIndexByHost.put(serverId, nextIndexByHost.get(serverId) - 1);
+                            }
+
+                            // If there exists an N such that N > commitIndex, a majority
+                            // of matchIndex[i] ≥ N, and log[N].term == currentTerm: set commitIndex = N
+                            List<Integer> matchIndexes = matchIndexByHost.values().stream().sorted().toList();
+                            int N = matchIndexes.get(matchIndexes.size() / 2);
+                            if (N > commitIndex.get() && log.get(N).isPresent() && log.get(N).get().term() == currentTerm.get()) {
+                                commitIndex.set(N);
+                            }
+
+                            // If commitIndex > lastApplied: increment lastApplied, apply log[lastApplied] to state machine
+                            if (commitIndex.get() > lastApplied.get()) {
+                                for (int i = lastApplied.get() + 1; i <= commitIndex.get(); i++) {
+                                    Optional<LogEntry> logEntry = log.get(i);
+                                    logEntry.ifPresent(entry -> {
+                                        logger.info("Applying command {} on leader", entry.command());
+                                        stateMachine.apply(entry.command());
+                                    });
+                                }
+                                lastApplied.set(commitIndex.get());
                             }
                         }
-
-                        // If there exists an N such that N > commitIndex, a majority
-                        //of matchIndex[i] ≥ N, and log[N].term == currentTerm: set commitIndex = N
-                        List<Integer> matchIndexes = matchIndexByHost.values().stream().sorted().toList();
-                        int N = matchIndexes.get(matchIndexes.size() / 2);
-                        if (N > commitIndex.get() && log.get(N).isPresent() && log.get(N).get().term() == currentTerm.get()) {
-                            commitIndex.set(N);
-                        }
-
-                        // If commitIndex > lastApplied: increment lastApplied, apply log[lastApplied] to state machine (§5.3)
-                        if (commitIndex.get() > lastApplied.get()) {
-                            for (int i = lastApplied.get() + 1; i <= commitIndex.get(); i++) {
-                                Optional<LogEntry> logEntry = log.get(i);
-                                logEntry.ifPresent(entry -> stateMachine.apply(entry.command()));
-                            }
-                            lastApplied.set(commitIndex.get());
-                        }
+                    } catch (Exception e) {
+                        logger.error("Error while sending heartbeat", e);
                     }
                 }
         );
     }
 
     public void set(String key, String value) {
-        log.append(key, value, currentTerm.get());
+        if (!isLeader()) {
+            throw new IllegalStateException("I'm not a leader, I cannot set a value");
+        }
+        int offset = log.append(key, value, currentTerm.get());
 
-        Future<?> sendAppendEntriesFuture = triggerHeartbeat();
+        logger.info("Sending append entries to followers");
+        triggerHeartbeat();
 
         try {
-            // todo: check result in order to return a proper ack to the client
-            // todo: non mi basta aspettare esattamente questo future!
-            sendAppendEntriesFuture.get(); // blocking until the append entries are sent
+            // block thread till lastApplied is not set to currentTerm
+            if (log.lastLogEntry().isEmpty()) {
+                throw new IllegalStateException("Last log entry is not present when setting a value");
+            }
 
-            //todo apply the command to the state machine
-
+            while (lastApplied.get() != offset) {
+                logger.info("Waiting for lastApplied to be set to {}", offset);
+                Thread.sleep(500);
+            }
 
 
         } catch (Exception e) {
@@ -296,31 +311,53 @@ public class RaftServer {
     }
 
     public synchronized AppendEntriesResponse accept(AppendEntriesRequest appendEntriesRequest) {
-        if (isLeader()) {
-            throw new IllegalStateException("I'm a leader, I cannot accept append entries");
+        if (this.isLeader()) {
+            logger.error("Received append entries request from another leader. Current leader is {}", this.getUuid());
+            return new AppendEntriesResponse(this.getCurrentTerm(), false);
         }
+
+        if (appendEntriesRequest.term() < this.getCurrentTerm()) {
+            logger.error("Received append entries request with stale term ({}). Current term is {}",
+                    appendEntriesRequest.term(), this.getCurrentTerm());
+            return new AppendEntriesResponse(this.getCurrentTerm(), false);
+        }
+
+        // in all other cases, I'm a follower that has received either a heartbeat or an append entries request
+
+        this.switchToFollower(); // if I was a candidate I will become a follower
+        this.setCurrentTerm(appendEntriesRequest.term());
+
+        receivedHeartbeat.set(true);
 
         if (log.get(appendEntriesRequest.prevLogIndex()).isPresent() &&
                 log.get(appendEntriesRequest.prevLogIndex()).get().term() != appendEntriesRequest.prevLogTerm()) {
             return new AppendEntriesResponse(this.currentTerm.get(), false);
         } else {
             for (LogEntry entry: appendEntriesRequest.entries()) {
+                logger.info("Appending command {} on follower log", entry.command());
                 log.append(entry.command().key(), entry.command().value(), this.currentTerm.get());
             }
 
             if (appendEntriesRequest.leaderCommit() > commitIndex.get()) {
-                int lastLogEntryIndex = 0;
-                if (log.lastLogEntry().isPresent()) {
-                    lastLogEntryIndex = log.lastLogEntry().get().index();
+                int numberOfLogEntries = appendEntriesRequest.entries().size();
+                int lastNewLogEntryIndex = 0;
+                if (numberOfLogEntries > 0) {
+                    lastNewLogEntryIndex = appendEntriesRequest.entries().get(numberOfLogEntries - 1).index();
                 }
-                commitIndex.set(Math.min(appendEntriesRequest.leaderCommit(), lastLogEntryIndex));
+
+                int lastCommittedOffset = Math.min(appendEntriesRequest.leaderCommit(), lastNewLogEntryIndex);
+                logger.info("Setting commit index to {}", lastCommittedOffset);
+                commitIndex.set(lastCommittedOffset);
             }
 
             // apply the command to the state machine if commitIndex > lastApplied
             if (commitIndex.get() > lastApplied.get()) {
                 for (int i = lastApplied.get() + 1; i <= commitIndex.get(); i++) {
                     Optional<LogEntry> logEntry = log.get(i);
-                    logEntry.ifPresent(it -> stateMachine.apply(it.command()));
+                    logEntry.ifPresent(it -> {
+                        logger.info("Applying command {} on follower", it.command());
+                        stateMachine.apply(it.command());
+                    });
 
                 }
                 lastApplied.set(commitIndex.get());

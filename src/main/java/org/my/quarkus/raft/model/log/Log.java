@@ -10,8 +10,10 @@ import java.util.Optional;
 public class Log {
     private final List<LogEntry> logEntries = new ArrayList<>();
 
-    public synchronized void append(String key, String value, int term) {
-        logEntries.add(new LogEntry(new StateMachineCommand(key, value), term, logEntries.size()));
+    public synchronized int append(String key, String value, int term) {
+        int offset = logEntries.size();
+        logEntries.add(new LogEntry(new StateMachineCommand(key, value), term, offset));
+        return offset;
     }
 
     // todo: to improve
@@ -42,5 +44,12 @@ public class Log {
 
     public synchronized List<LogEntry> lastLogEntries(int fromIndex) {
         return logEntries.subList(fromIndex, logEntries.size());
+    }
+
+    public static void main(String[] args) {
+        Log log = new Log();
+        log.append("key1", "value1", 1);
+
+        System.out.println(log.lastLogEntries(1));
     }
 }

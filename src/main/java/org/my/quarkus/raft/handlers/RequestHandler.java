@@ -24,24 +24,7 @@ public enum RequestHandler {
 
     public AppendEntriesResponse appendEntries(AppendEntriesRequest appendEntriesRequest) {
         logger.info(appendEntriesRequest.toString());
-
-        if (raftServer.isLeader()) {
-            logger.error("Received append entries request from another leader. Current leader is {}", raftServer.getUuid());
-            return new AppendEntriesResponse(raftServer.getCurrentTerm(), false);
-        }
-
-        if (appendEntriesRequest.term() < raftServer.getCurrentTerm()) {
-            return new AppendEntriesResponse(raftServer.getCurrentTerm(), false);
-        } else {
-            raftServer.switchToFollower(); // in this way, if I was a candidate I will become a follower
-
-            raftServer.setCurrentTerm(appendEntriesRequest.term());
-            raftServer.setVotedFor(appendEntriesRequest.serverId());
-
-            raftServer.setReceivedHeartbeat();
-
-            return raftServer.accept(appendEntriesRequest);
-        }
+        return raftServer.accept(appendEntriesRequest);
     }
 
     public RequestVoteResponse requestVote(RequestVoteRequest requestVoteRequest) {
@@ -69,6 +52,7 @@ public enum RequestHandler {
     }
 
     public void set(StateMachineCommand object) {
+        logger.info("Received request: {}", object.toString());
         raftServer.set(object.key(), object.value());
     }
 }

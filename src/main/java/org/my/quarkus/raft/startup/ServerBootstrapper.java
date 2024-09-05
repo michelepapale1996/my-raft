@@ -28,7 +28,7 @@ public class ServerBootstrapper {
         ClusterState clusterState = new ClusterState(Arrays.asList(this.clusterHosts.split(",")));
         instance.setClusterState(clusterState);
 
-        Scheduler scheduler = new Scheduler(10000, 30000, 500);
+        Scheduler scheduler = new Scheduler(10000, 30000, 2000);
         instance.setScheduler(scheduler);
 
         logger.info("Starting server with uuid {}", instance.getUuid());

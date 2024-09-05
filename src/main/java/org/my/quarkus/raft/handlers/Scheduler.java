@@ -49,8 +49,12 @@ public class Scheduler {
     public synchronized void startSendingHeartbeats() {
         scheduledFuture = heartbeatExecutorService.scheduleAtFixedRate(
                 () -> {
-                    logger.info("Sending heartbeats to followers...");
-                    RaftServer.getInstance().triggerHeartbeat();
+                    try {
+                        logger.info("Sending heartbeats to followers...");
+                        RaftServer.getInstance().triggerHeartbeat();
+                    } catch (Exception e) {
+                        logger.error("Error while sending heartbeats", e);
+                    }
                 },
                 heartbeatTimeout,
                 heartbeatTimeout,
