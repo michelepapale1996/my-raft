@@ -1,4 +1,4 @@
-package org.my.quarkus.raft.api;
+package org.my.quarkus.raft.api.append.entries;
 
 import org.my.quarkus.raft.model.log.LogEntry;
 
