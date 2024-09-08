@@ -4,7 +4,9 @@ import org.my.quarkus.raft.model.state.machine.StateMachineCommand;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public class Log {
@@ -42,14 +44,19 @@ public class Log {
         return Optional.of(entries.get(0));
     }
 
+    /**
+     * Returns the log entries starting from the given index.
+     * In case from index is negative, an IllegalArgumentException is thrown.
+     */
     public synchronized List<LogEntry> lastLogEntries(int fromIndex) {
+        if (fromIndex < 0) {
+            throw new IllegalArgumentException("fromIndex cannot be negative, given " + fromIndex);
+        }
+
+        if (fromIndex >= logEntries.size()) {
+            return Collections.emptyList();
+        }
+
         return logEntries.subList(fromIndex, logEntries.size());
-    }
-
-    public static void main(String[] args) {
-        Log log = new Log();
-        log.append("key1", "value1", 1);
-
-        System.out.println(log.lastLogEntries(1));
     }
 }

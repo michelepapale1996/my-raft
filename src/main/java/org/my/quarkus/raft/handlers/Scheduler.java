@@ -1,15 +1,9 @@
 package org.my.quarkus.raft.handlers;
 
-import org.my.quarkus.raft.api.AppendEntriesRequest;
-import org.my.quarkus.raft.api.AppendEntriesResponse;
-import org.my.quarkus.raft.client.ServerRestClient;
 import org.my.quarkus.raft.model.cluster.RaftServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;

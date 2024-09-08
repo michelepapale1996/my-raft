@@ -1,29 +1,25 @@
 package org.my.quarkus.raft.model.cluster;
 
-import org.my.quarkus.raft.api.AppendEntriesRequest;
-import org.my.quarkus.raft.api.AppendEntriesResponse;
+import org.my.quarkus.raft.api.append.entries.AppendEntriesRequest;
+import org.my.quarkus.raft.api.append.entries.AppendEntriesResponse;
 import org.my.quarkus.raft.client.ServerRestClient;
 import org.my.quarkus.raft.handlers.Scheduler;
 import org.my.quarkus.raft.model.log.Log;
 import org.my.quarkus.raft.model.log.LogEntry;
 import org.my.quarkus.raft.model.state.machine.StateMachine;
-import org.my.quarkus.raft.model.state.machine.StateMachineCommand;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 public class RaftServer {
 
@@ -162,8 +158,8 @@ public class RaftServer {
         Map<String, AppendEntriesRequest> appendEntriesRequests = new HashMap<>();
 
         Optional<LogEntry> logEntry = log.lastLogEntry();
-        int prevLogIndex = 0;
-        int prevLogTerm = 0;
+        int prevLogIndex = -1;
+        int prevLogTerm = -1;
         if (logEntry.isPresent()) {
             prevLogIndex = logEntry.get().index();
             prevLogTerm = logEntry.get().term();
@@ -329,6 +325,8 @@ public class RaftServer {
 
         receivedHeartbeat.set(true);
 
+
+        // todo: handle the case where the follower is not in sync with the leader
         if (log.get(appendEntriesRequest.prevLogIndex()).isPresent() &&
                 log.get(appendEntriesRequest.prevLogIndex()).get().term() != appendEntriesRequest.prevLogTerm()) {
             return new AppendEntriesResponse(this.currentTerm.get(), false);

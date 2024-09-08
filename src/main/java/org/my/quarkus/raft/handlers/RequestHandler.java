@@ -1,9 +1,9 @@
 package org.my.quarkus.raft.handlers;
 
-import org.my.quarkus.raft.api.AppendEntriesRequest;
-import org.my.quarkus.raft.api.AppendEntriesResponse;
-import org.my.quarkus.raft.api.RequestVoteRequest;
-import org.my.quarkus.raft.api.RequestVoteResponse;
+import org.my.quarkus.raft.api.append.entries.AppendEntriesRequest;
+import org.my.quarkus.raft.api.append.entries.AppendEntriesResponse;
+import org.my.quarkus.raft.api.voting.RequestVoteRequest;
+import org.my.quarkus.raft.api.voting.RequestVoteResponse;
 import org.my.quarkus.raft.model.cluster.RaftServer;
 import org.my.quarkus.raft.model.log.LogEntry;
 import org.my.quarkus.raft.model.state.machine.StateMachineCommand;

@@ -1,7 +1,7 @@
 package org.my.quarkus.raft.handlers;
 
-import org.my.quarkus.raft.api.RequestVoteRequest;
-import org.my.quarkus.raft.api.RequestVoteResponse;
+import org.my.quarkus.raft.api.voting.RequestVoteRequest;
+import org.my.quarkus.raft.api.voting.RequestVoteResponse;
 import org.my.quarkus.raft.client.ServerRestClient;
 import org.my.quarkus.raft.model.cluster.RaftServer;
 import org.my.quarkus.raft.model.log.LogEntry;
@@ -9,7 +9,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
