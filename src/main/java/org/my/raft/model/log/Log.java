@@ -57,4 +57,16 @@ public class Log {
 
         return logEntries.subList(fromIndex, logEntries.size());
     }
+
+    @Override
+    public String toString() {
+        return "Log{" +
+                "logEntries=" + logEntries +
+                '}';
+    }
+
+    // used for serialization purposes. TODO: To be removed
+    public List<LogEntry> getLogEntries() {
+        return logEntries;
+    }
 }

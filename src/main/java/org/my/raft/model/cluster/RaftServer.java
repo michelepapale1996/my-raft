@@ -59,15 +59,6 @@ public class RaftServer {
     // index of the highest log entry applied to state machine (initialized to 0, increases monotonically)
     private final AtomicInteger lastApplied = new AtomicInteger(-1);
 
-    public void start() {
-        assert clusterState != null;
-        assert scheduler != null;
-        assert requestHandler != null;
-        assert leaderElectionHandler != null;
-        assert requestExecutor != null;
-
-        scheduler.startLeaderElectionHandler();
-    }
 
     public void setRequestHandler(RequestHandler requestHandler) {
         this.requestHandler = requestHandler;
@@ -163,6 +154,22 @@ public class RaftServer {
 
     public Log getLog() {
         return log;
+    }
+
+    public void start() {
+        assert clusterState != null;
+        assert scheduler != null;
+        assert requestHandler != null;
+        assert leaderElectionHandler != null;
+        assert requestExecutor != null;
+
+        scheduler.startLeaderElectionHandler();
+    }
+
+    public ServerState getServerState() {
+        ServerState serverState = ServerState.of(uuid, log, status, stateMachine, currentTerm.get(), commitIndex.get(), lastApplied.get());
+        logger.info(serverState.toString());
+        return serverState;
     }
 
     private Map<String, AppendEntriesRequest> buildAppendEntriesRequests() {

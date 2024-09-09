@@ -5,6 +5,7 @@ import org.my.raft.api.append.entries.AppendEntriesResponse;
 import org.my.raft.api.voting.RequestVoteRequest;
 import org.my.raft.api.voting.RequestVoteResponse;
 import org.my.raft.model.cluster.RaftServer;
+import org.my.raft.model.cluster.ServerState;
 import org.my.raft.model.log.LogEntry;
 import org.my.raft.model.state.machine.StateMachineCommand;
 import org.slf4j.Logger;
@@ -54,5 +55,9 @@ public class RequestHandler {
     public void set(StateMachineCommand object) {
         logger.info("Received request: {}", object.toString());
         raftServer.set(object.key(), object.value());
+    }
+
+    public ServerState getServerState() {
+        return raftServer.getServerState();
     }
 }

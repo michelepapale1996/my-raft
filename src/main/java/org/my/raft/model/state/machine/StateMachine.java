@@ -14,4 +14,15 @@ public class StateMachine {
         return state.get(key);
     }
 
+    @Override
+    public String toString() {
+        return "StateMachine{" +
+                "state=" + state +
+                '}';
+    }
+
+    // used for serialization purposes. TODO: To be removed
+    public Map<String, String> getState() {
+        return state;
+    }
 }
