@@ -41,14 +41,26 @@ curl -X GET http://localhost:9092/objects/1
 
 
 ## The project in action
-After you run the three nodes, you should see that one the nodes is elected as the leader. You can check the status of the nodes by issuing a GET request to the `/raft/state` endpoint. The leader node should have the `LEADER` status.
+After you run the three nodes, you should see that one the nodes is elected as the leader. You can check the status of the nodes by issuing a GET request to the `/raft/state` endpoint. 
+The leader node should have the `LEADER` status. You can also check the logs of the nodes to see the communication between them.
 
-## Open points
+Next you can test the application by setting and retrieving values from the Raft cluster. You can set a value by issuing a POST request to the `/objects` endpoint and retrieve it by issuing a GET request to the `/objects/{:id}` endpoint.
+
+In case the leader node crashes, the other nodes are not able to elect a new leader since the quorum is not satisfied. Once you restart the previously crashed node, a leader should be elected again.
+
+In case, instead, a follower node crashes, the other nodes are able to continue working without any problem. Try to set a value in the Raft cluster and retrieve it. You should see that the value is correctly set and retrieved. 
+
+Finally, if you start again the crashed follower node, it should be able to re-sync with the leader node and continue working as before.
+
+## Limitations (up to now :D)
+- The log is not persisted to disk, for the moment is in memory
+- The log replication is working but the election restriction at 5.4.1 is not implemented yet. This leads to the fact that the leader can be elected even if it has not the most up-to-date log
+- Cluster membership changes are not implemented yet
+
+## Open points & Improvements
 - [X] Add unit tests to Log
 - [ ] Add unit and integration tests on RaftServer
 - [ ] Ensure consistency and isolation of the algorithm. An idea could be to make the RaftServer state immutable for better concurrency control
 - [ ] Whenever a client issues a command (also for get requests), validation must be performed to ensure that the node is the leader
 - [ ] The client set request is synchronous to the heartbeating mechanism
 - [ ] Every time an illegal state is reached, the node should log it's current state
-- [ ] Up to now the log replication is working but the election restriction at 5.4.1 is not implemented yet. This leads to the fact that the leader can be elected even if it has not the most up-to-date log
-- [ ] Log must be persisted to disk, up to now is only in memory
