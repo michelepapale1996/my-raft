@@ -36,7 +36,7 @@ public class RequestHandler {
         }
 
         Optional<String> votedForOptional = raftServer.getVotedFor();
-        Optional<LogEntry> logEntry = raftServer.getLog().get(requestVoteRequest.lastLogIndex());
+        Optional<LogEntry> logEntry = raftServer.getLog().entryAt(requestVoteRequest.lastLogIndex());
         if (
                 (votedForOptional.isEmpty() || votedForOptional.get().equals(requestVoteRequest.candidateId())) &&
                         (logEntry.isEmpty() || logEntry.get().term() == requestVoteRequest.lastLogTerm())) {

@@ -6,29 +6,29 @@ import org.junit.jupiter.api.Test;
 public class LogTests {
 
     @Test
-    public void given_log_when_fromIndexIsNegative_then_exception() {
+    public void given_log_when_previousIndexIsNegative_then_exception() {
         Log log = new Log();
-        Assertions.assertThrows(IllegalArgumentException.class, () -> log.lastLogEntries(-1));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> log.nextEntry(-1));
     }
 
     @Test
-    public void given_log_when_fromIndexIsGreaterThanSize_then_emptyList() {
+    public void given_log_when_previousIndexIsGreaterThanSize_then_emptyList() {
         Log log = new Log();
-        assert log.lastLogEntries(1).isEmpty();
+        assert log.nextEntry(1).isEmpty();
     }
 
     @Test
-    public void given_log_when_get_then_logEntryReturned() {
+    public void given_log_when_entryAt_then_logEntryReturned() {
         Log log = new Log();
         log.append("key", "value", 1);
 
-        assert log.get(0).isPresent();
-        assert log.get(0).get().command().key().equals("key");
-        assert log.get(0).get().command().value().equals("value");
-        assert log.get(0).get().term() == 1;
+        assert log.entryAt(0).isPresent();
+        assert log.entryAt(0).get().command().key().equals("key");
+        assert log.entryAt(0).get().command().value().equals("value");
+        assert log.entryAt(0).get().term() == 1;
 
-        assert log.get(1).isEmpty();
-        assert log.get(-1).isEmpty();
+        assert log.entryAt(1).isEmpty();
+        assert log.entryAt(-1).isEmpty();
     }
 
     @Test
@@ -42,10 +42,10 @@ public class LogTests {
         assert log.lastLogEntry().get().command().value().equals("value");
         assert log.lastLogEntry().get().term() == 1;
 
-        assert log.lastLogEntries(0).size() == 1;
-        assert log.lastLogEntries(0).get(0).command().key().equals("key");
-        assert log.lastLogEntries(0).get(0).command().value().equals("value");
-        assert log.lastLogEntries(0).get(0).term() == 1;
+        assert log.nextEntry(0).isPresent();
+        assert log.nextEntry(0).get().command().key().equals("key");
+        assert log.nextEntry(0).get().command().value().equals("value");
+        assert log.nextEntry(0).get().term() == 1;
     }
 
     @Test
@@ -54,7 +54,7 @@ public class LogTests {
 
         assert log.lastLogEntry().isEmpty();
 
-        assert log.lastLogEntries(0).isEmpty();
-        assert log.lastLogEntries(1).isEmpty();
+        assert log.nextEntry(0).isEmpty();
+        assert log.nextEntry(1).isEmpty();
     }
 }

@@ -27,7 +27,7 @@ public class RequestExecutor {
             try {
                 responsesByServer.put(serverId, serverRestClient.appendEntries(appendEntriesRequest));
             } catch (Exception e) {
-                logger.error("Error while sending request to server {}. It will be skipped.", serverId, e);
+                logger.error("Error while sending request to server {}. It will be skipped.", serverId);
             }
         }
         return responsesByServer;

@@ -12,7 +12,7 @@ import org.my.raft.model.state.machine.StateMachine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -168,20 +168,12 @@ public class RaftServer {
 
     public ServerState getServerState() {
         ServerState serverState = ServerState.of(uuid, log, status, stateMachine, currentTerm.get(), commitIndex.get(), lastApplied.get());
-        logger.info(serverState.toString());
+        logger.info("Current ServerState: {}", serverState);
         return serverState;
     }
 
     private Map<String, AppendEntriesRequest> buildAppendEntriesRequests() {
         Map<String, AppendEntriesRequest> appendEntriesRequests = new HashMap<>();
-
-        Optional<LogEntry> logEntry = log.lastLogEntry();
-        int prevLogIndex = -1;
-        int prevLogTerm = -1;
-        if (logEntry.isPresent()) {
-            prevLogIndex = logEntry.get().index();
-            prevLogTerm = logEntry.get().term();
-        }
 
         for (Map.Entry<String, ServerRestClient> entry: clusterState.getServerRestClientsByHostName().entrySet()) {
             String serverId = entry.getKey();
@@ -191,19 +183,67 @@ public class RaftServer {
                 throw new IllegalStateException();
             }
 
-            List<LogEntry> entries = new ArrayList<>();
-            if (prevLogIndex >= nextIndexByHost.get(serverId)) {
-                entries.addAll(log.lastLogEntries(nextIndexByHost.get(serverId)));
-            }
+            AppendEntriesRequest appendEntriesRequest;
+            // in case the log is empty, send just an heartbeat
+            if (log.lastLogEntry().isEmpty()) {
+                appendEntriesRequest = new AppendEntriesRequest(
+                        currentTerm.get(),
+                        uuid.toString(),
+                        -1,
+                        -1,
+                        Collections.emptyList(),
+                        commitIndex.get()
+                );
+            } else {
+                LogEntry lastLogEntry = log.lastLogEntry().get();
+                // check if the follower is lagging behind or is up-to-date
+                if (lastLogEntry.index() >= nextIndexByHost.get(serverId)) {
+                    // follower is missing some log entries. Send the first missing entry
 
-            AppendEntriesRequest appendEntriesRequest = new AppendEntriesRequest(
-                    currentTerm.get(),
-                    uuid.toString(),
-                    prevLogIndex,
-                    prevLogTerm,
-                    entries,
-                    commitIndex.get()
-            );
+                    if (log.nextEntry(nextIndexByHost.get(serverId)).isEmpty()) {
+                        logger.error("Log entry at index {} is not present in the log. " +
+                                "However it is not possible since I'm the leader and my last log entry with offset {} is higher than the entry of the follower {}",
+                                nextIndexByHost.get(serverId),
+                                lastLogEntry.index(),
+                                serverId
+                        );
+                        throw new IllegalStateException();
+                    }
+
+                    Optional<LogEntry> lastLogEntryOnFollowerLogOptional = log.entryAt(nextIndexByHost.get(serverId) - 1);
+                    List<LogEntry> entries = Collections.singletonList(log.nextEntry(nextIndexByHost.get(serverId)).get());
+
+                    if (lastLogEntryOnFollowerLogOptional.isPresent()) {
+                        appendEntriesRequest = new AppendEntriesRequest(
+                                currentTerm.get(),
+                                uuid.toString(),
+                                lastLogEntryOnFollowerLogOptional.get().index(),
+                                lastLogEntryOnFollowerLogOptional.get().term(),
+                                entries,
+                                commitIndex.get()
+                        );
+                    } else {
+                        appendEntriesRequest = new AppendEntriesRequest(
+                                currentTerm.get(),
+                                uuid.toString(),
+                                -1,
+                                -1,
+                                entries,
+                                commitIndex.get()
+                        );
+                    }
+                } else {
+                    // send an heartbeat since the follower is already up-to-date
+                    appendEntriesRequest = new AppendEntriesRequest(
+                            currentTerm.get(),
+                            uuid.toString(),
+                            lastLogEntry.index(),
+                            lastLogEntry.term(),
+                            Collections.emptyList(),
+                            commitIndex.get()
+                    );
+                }
+            }
 
             appendEntriesRequests.put(serverId, appendEntriesRequest);
         }
@@ -234,7 +274,6 @@ public class RaftServer {
                         this.switchToFollower();
                         this.setCurrentTerm(maxTerm);
                     } else {
-                        Optional<LogEntry> lastLogEntry = log.lastLogEntry();
 
                         for (Map.Entry<String, AppendEntriesResponse> entry : responsesByServer.entrySet()) {
                             String serverId = entry.getKey();
@@ -243,14 +282,17 @@ public class RaftServer {
                             maxTerm = Math.max(maxTerm, response.term());
 
                             if (response.success()) {
-                                if (lastLogEntry.isPresent()) {
-                                    int nextIndex = lastLogEntry.get().index() + 1;
-                                    int matchIndex = lastLogEntry.get().index();
-                                    logger.info("Received success response from follower {}. " +
-                                            "NextIndex: {}; matchIndex: {}", serverId, nextIndex, matchIndex);
-                                    nextIndexByHost.put(serverId, nextIndex);
-                                    matchIndexByHost.put(serverId, matchIndex);
+                                AppendEntriesRequest requestSent = appendEntriesRequestsForOtherHosts.get(serverId);
+                                if (requestSent.entries().isEmpty()) {
+                                    continue;
                                 }
+                                LogEntry lastAcceptedEntry = requestSent.entries().get(requestSent.entries().size() - 1);
+                                int nextIndex = lastAcceptedEntry.index() + 1;
+                                int matchIndex = lastAcceptedEntry.index();
+                                logger.info("Received success response from follower {}. " +
+                                        "NextIndex: {}; matchIndex: {}", serverId, nextIndex, matchIndex);
+                                nextIndexByHost.put(serverId, nextIndex);
+                                matchIndexByHost.put(serverId, matchIndex);
                             } else {
                                 int nextIndex = nextIndexByHost.get(serverId) - 1;
                                 int matchIndex = matchIndexByHost.get(serverId);
@@ -264,14 +306,14 @@ public class RaftServer {
                         // of matchIndex[i] ≥ N, and log[N].term == currentTerm: set commitIndex = N
                         List<Integer> matchIndexes = matchIndexByHost.values().stream().sorted().toList();
                         int N = matchIndexes.get(matchIndexes.size() / 2);
-                        if (N > commitIndex.get() && log.get(N).isPresent() && log.get(N).get().term() == currentTerm.get()) {
+                        if (N > commitIndex.get() && log.entryAt(N).isPresent() && log.entryAt(N).get().term() == currentTerm.get()) {
                             commitIndex.set(N);
                         }
 
                         // If commitIndex > lastApplied: increment lastApplied, apply log[lastApplied] to state machine
                         if (commitIndex.get() > lastApplied.get()) {
                             for (int i = lastApplied.get() + 1; i <= commitIndex.get(); i++) {
-                                Optional<LogEntry> logEntry = log.get(i);
+                                Optional<LogEntry> logEntry = log.entryAt(i);
                                 logEntry.ifPresent(entry -> {
                                     logger.info("Applying command {} on leader", entry.command());
                                     stateMachine.apply(entry.command());
@@ -335,10 +377,22 @@ public class RaftServer {
 
         receivedHeartbeat.set(true);
 
+        // edge case: if the log is empty, accept the request if the prevLogIndex is -1
+        if (log.size() == 0) {
+            if (appendEntriesRequest.prevLogIndex() == -1) {
+                for (LogEntry entry: appendEntriesRequest.entries()) {
+                    logger.info("Appending first command {} on follower log", entry.command());
+                    log.append(entry.command().key(), entry.command().value(), this.currentTerm.get());
+                }
+                return new AppendEntriesResponse(this.currentTerm.get(), true);
+            } else {
+                // the log is empty and the prevLogIndex is not -1 - I'm not in sync!
+                return new AppendEntriesResponse(this.currentTerm.get(), false);
+            }
+        }
 
-        // todo: handle the case where the follower is not in sync with the leader
-        if (log.get(appendEntriesRequest.prevLogIndex()).isPresent() &&
-                log.get(appendEntriesRequest.prevLogIndex()).get().term() != appendEntriesRequest.prevLogTerm()) {
+        if (log.entryAt(appendEntriesRequest.prevLogIndex()).isPresent() &&
+                log.entryAt(appendEntriesRequest.prevLogIndex()).get().term() != appendEntriesRequest.prevLogTerm()) {
             return new AppendEntriesResponse(this.currentTerm.get(), false);
         } else {
             for (LogEntry entry: appendEntriesRequest.entries()) {
@@ -347,12 +401,7 @@ public class RaftServer {
             }
 
             if (appendEntriesRequest.leaderCommit() > commitIndex.get()) {
-                int numberOfLogEntries = appendEntriesRequest.entries().size();
-                int lastNewLogEntryIndex = 0;
-                if (numberOfLogEntries > 0) {
-                    lastNewLogEntryIndex = appendEntriesRequest.entries().get(numberOfLogEntries - 1).index();
-                }
-
+                int lastNewLogEntryIndex = log.lastLogEntry().map(LogEntry::index).orElse(-1);
                 int lastCommittedOffset = Math.min(appendEntriesRequest.leaderCommit(), lastNewLogEntryIndex);
                 logger.info("Setting commit index to {}", lastCommittedOffset);
                 commitIndex.set(lastCommittedOffset);
@@ -361,7 +410,7 @@ public class RaftServer {
             // apply the command to the state machine if commitIndex > lastApplied
             if (commitIndex.get() > lastApplied.get()) {
                 for (int i = lastApplied.get() + 1; i <= commitIndex.get(); i++) {
-                    Optional<LogEntry> logEntry = log.get(i);
+                    Optional<LogEntry> logEntry = log.entryAt(i);
                     logEntry.ifPresent(it -> {
                         logger.info("Applying command {} on follower", it.command());
                         stateMachine.apply(it.command());

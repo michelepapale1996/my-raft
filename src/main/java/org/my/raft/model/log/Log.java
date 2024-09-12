@@ -3,12 +3,15 @@ package org.my.raft.model.log;
 import org.my.raft.model.state.machine.StateMachineCommand;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
 public class Log {
     private final List<LogEntry> logEntries = new ArrayList<>();
+
+    public int size() {
+        return logEntries.size();
+    }
 
     public synchronized int append(String key, String value, int term) {
         int offset = logEntries.size();
@@ -23,7 +26,7 @@ public class Log {
         logEntries.subList(index + 1, logEntries.size()).clear();
     }
 
-    public synchronized Optional<LogEntry> get(int index) {
+    public synchronized Optional<LogEntry> entryAt(int index) {
         if (index < 0 || index >= logEntries.size()) {
             return Optional.empty();
         } else {
@@ -35,27 +38,23 @@ public class Log {
         if (logEntries.isEmpty()) {
             return Optional.empty();
         }
-        List<LogEntry> entries = lastLogEntries(this.logEntries.size() - 1);
-        if (entries.isEmpty()) {
-            return Optional.empty();
-        }
-        return Optional.of(entries.get(0));
+        return nextEntry(this.logEntries.size() - 1);
     }
 
     /**
      * Returns the log entries starting from the given index.
      * In case from index is negative, an IllegalArgumentException is thrown.
      */
-    public synchronized List<LogEntry> lastLogEntries(int fromIndex) {
-        if (fromIndex < 0) {
-            throw new IllegalArgumentException("fromIndex cannot be negative, given " + fromIndex);
+    public synchronized Optional<LogEntry> nextEntry(int previousIndex) {
+        if (previousIndex < 0) {
+            throw new IllegalArgumentException("previousIndex cannot be negative, given " + previousIndex);
         }
 
-        if (fromIndex >= logEntries.size()) {
-            return Collections.emptyList();
+        if (previousIndex >= logEntries.size()) {
+            return Optional.empty();
         }
 
-        return logEntries.subList(fromIndex, logEntries.size());
+        return Optional.of(logEntries.subList(previousIndex, previousIndex + 1).get(0));
     }
 
     @Override
