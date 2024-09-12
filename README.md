@@ -16,7 +16,10 @@ export JAVA_HOME=/Users/michele.papale/.asdf/installs/java/openjdk-17; export cl
 ```
 
 ## Open points
-- [ ] Add tests
-- [ ] Ensure consistency and isolation of the algorithm
-- [ ] Whenever a client issues a command, validation must be performed to ensure that the node is the leader
+- [X] Add unit tests to Log
+- [ ] Add unit and integration tests on RaftServer
+- [ ] Ensure consistency and isolation of the algorithm. An idea could be to make the RaftServer state immutable for better concurrency control
+- [ ] Whenever a client issues a command (also for get requests), validation must be performed to ensure that the node is the leader
 - [ ] The client set request is synchronous to the heartbeating mechanism
+- [ ] Every time an illegal state is reached, the node should log it's current state
+- [ ] Up to now the log replication is working but the election restriction at 5.4.1 is not implemented yet. This leads to the fact that the leader can be elected even if it has not the most up-to-date log
