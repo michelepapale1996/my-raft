@@ -1,4 +1,4 @@
-package org.my.raft.api.append.entries;
+package org.my.raft.model.api.append.entries;
 
 import org.my.raft.model.log.LogEntry;
 

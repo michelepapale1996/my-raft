@@ -4,13 +4,12 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
-import org.my.raft.handlers.RequestHandler;
-import org.my.raft.api.append.entries.AppendEntriesRequest;
-import org.my.raft.api.append.entries.AppendEntriesResponse;
-import org.my.raft.api.voting.RequestVoteRequest;
-import org.my.raft.api.voting.RequestVoteResponse;
-import org.my.raft.model.cluster.RaftServer;
-import org.my.raft.model.cluster.ServerState;
+import org.my.raft.model.api.append.entries.AppendEntriesRequest;
+import org.my.raft.model.api.append.entries.AppendEntriesResponse;
+import org.my.raft.model.api.voting.RequestVoteRequest;
+import org.my.raft.model.api.voting.RequestVoteResponse;
+import org.my.raft.server.RaftServer;
+import org.my.raft.server.ServerState;
 
 // This class is not a REST endpoint, but for the sake of simplicity, we will use it as one
 @Path("/raft")

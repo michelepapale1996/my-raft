@@ -1,4 +1,4 @@
-package org.my.raft.model.cluster;
+package org.my.raft.server;
 
 import org.my.raft.model.log.Log;
 import org.my.raft.model.state.machine.StateMachine;

@@ -52,6 +52,9 @@ In case, instead, a follower node crashes, the other nodes are able to continue 
 
 Finally, if you start again the crashed follower node, it should be able to re-sync with the leader node and continue working as before.
 
+## Peculiarities
+- There is a clear distinction between the Raft algorithm and the communication logic. The Raft algorithm is implemented inside the `org.my.raft` package, while the communication logic is implemented inside the `org.my.quarkus` package. This allows to easily change the communication logic without affecting the Raft algorithm.
+
 ## Limitations (up to now :D)
 - The log is not persisted to disk, for the moment is in memory
 - The log replication is working but the election restriction at 5.4.1 is not implemented yet. This leads to the fact that the leader can be elected even if it has not the most up-to-date log

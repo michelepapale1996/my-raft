@@ -1,6 +1,5 @@
-package org.my.raft.handlers;
+package org.my.raft.server;
 
-import org.my.raft.model.cluster.RaftServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -1,4 +1,4 @@
-package org.my.raft.api.voting;
+package org.my.raft.model.api.voting;
 
 public record RequestVoteResponse(int term, boolean voteGranted) {
 }

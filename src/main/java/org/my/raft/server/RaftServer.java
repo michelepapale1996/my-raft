@@ -1,11 +1,8 @@
-package org.my.raft.model.cluster;
+package org.my.raft.server;
 
-import org.my.raft.api.append.entries.AppendEntriesRequest;
-import org.my.raft.api.append.entries.AppendEntriesResponse;
-import org.my.quarkus.client.ServerRestClient;
-import org.my.raft.handlers.LeaderElectionHandler;
-import org.my.raft.handlers.RequestHandler;
-import org.my.raft.handlers.Scheduler;
+import org.my.raft.model.api.append.entries.AppendEntriesRequest;
+import org.my.raft.model.api.append.entries.AppendEntriesResponse;
+import org.my.raft.model.cluster.ClusterState;
 import org.my.raft.model.log.Log;
 import org.my.raft.model.log.LogEntry;
 import org.my.raft.model.state.machine.StateMachine;
@@ -28,7 +25,7 @@ public class RaftServer {
     enum ServerRole { LEADER, CANDIDATE, FOLLOWER }
     private ClusterState clusterState;
     private Scheduler scheduler;
-    private RequestHandler requestHandler;
+    private RequestAcceptor requestAcceptor;
     private LeaderElectionHandler leaderElectionHandler;
     private RequestExecutor requestExecutor;
 
@@ -60,16 +57,20 @@ public class RaftServer {
     private final AtomicInteger lastApplied = new AtomicInteger(-1);
 
 
-    public void setRequestHandler(RequestHandler requestHandler) {
-        this.requestHandler = requestHandler;
+    public void setRequestAcceptor(RequestAcceptor requestAcceptor) {
+        this.requestAcceptor = requestAcceptor;
     }
 
     public void setRequestExecutor(RequestExecutor requestExecutor) {
         this.requestExecutor = requestExecutor;
     }
 
-    public RequestHandler getRequestHandler() {
-        return requestHandler;
+    public RequestExecutor getRequestExecutor() {
+        return requestExecutor;
+    }
+
+    public RequestAcceptor getRequestHandler() {
+        return requestAcceptor;
     }
 
     public void setLeaderElectionHandler(LeaderElectionHandler leaderElectionHandler) {
@@ -131,7 +132,7 @@ public class RaftServer {
         status = ServerRole.LEADER;
 
         // initialize nextIndexByHost and matchIndexByHost
-        for (String serverId: clusterState.getServerRestClientsByHostName().keySet()) {
+        for (String serverId: clusterState.getOtherClusterNodes()) {
             Optional<LogEntry> entry = log.lastLogEntry();
             if (entry.isEmpty()) {
                 nextIndexByHost.put(serverId, 0);
@@ -159,7 +160,7 @@ public class RaftServer {
     public void start() {
         assert clusterState != null;
         assert scheduler != null;
-        assert requestHandler != null;
+        assert requestAcceptor != null;
         assert leaderElectionHandler != null;
         assert requestExecutor != null;
 
@@ -175,9 +176,7 @@ public class RaftServer {
     private Map<String, AppendEntriesRequest> buildAppendEntriesRequests() {
         Map<String, AppendEntriesRequest> appendEntriesRequests = new HashMap<>();
 
-        for (Map.Entry<String, ServerRestClient> entry: clusterState.getServerRestClientsByHostName().entrySet()) {
-            String serverId = entry.getKey();
-
+        for (String serverId: clusterState.getOtherClusterNodes()) {
             if (!nextIndexByHost.containsKey(serverId) || !matchIndexByHost.containsKey(serverId)) {
                 logger.error("nextIndexByHost or matchIndexByHost not initialized for server {}", serverId);
                 throw new IllegalStateException();
@@ -262,7 +261,7 @@ public class RaftServer {
         scheduler.scheduleNow(
             () -> {
                 try {
-                    Map<String, AppendEntriesResponse> responsesByServer = requestExecutor.performRequests(appendEntriesRequestsForOtherHosts);
+                    Map<String, AppendEntriesResponse> responsesByServer = requestExecutor.performAppendEntriesRequests(appendEntriesRequestsForOtherHosts);
 
                     int maxTerm = responsesByServer.values().stream()
                             .mapToInt(AppendEntriesResponse::term)

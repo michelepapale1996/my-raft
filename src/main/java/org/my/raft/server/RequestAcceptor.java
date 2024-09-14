@@ -1,11 +1,9 @@
-package org.my.raft.handlers;
+package org.my.raft.server;
 
-import org.my.raft.api.append.entries.AppendEntriesRequest;
-import org.my.raft.api.append.entries.AppendEntriesResponse;
-import org.my.raft.api.voting.RequestVoteRequest;
-import org.my.raft.api.voting.RequestVoteResponse;
-import org.my.raft.model.cluster.RaftServer;
-import org.my.raft.model.cluster.ServerState;
+import org.my.raft.model.api.append.entries.AppendEntriesRequest;
+import org.my.raft.model.api.append.entries.AppendEntriesResponse;
+import org.my.raft.model.api.voting.RequestVoteRequest;
+import org.my.raft.model.api.voting.RequestVoteResponse;
 import org.my.raft.model.log.LogEntry;
 import org.my.raft.model.state.machine.StateMachineCommand;
 import org.slf4j.Logger;
@@ -13,12 +11,12 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
 
-public class RequestHandler {
-    private static final Logger logger = LoggerFactory.getLogger(RequestHandler.class);
+public class RequestAcceptor {
+    private static final Logger logger = LoggerFactory.getLogger(RequestAcceptor.class);
 
     private final RaftServer raftServer;
 
-    public RequestHandler(RaftServer raftServer) {
+    public RequestAcceptor(RaftServer raftServer) {
         this.raftServer = raftServer;
     }
 
@@ -55,9 +53,5 @@ public class RequestHandler {
     public void set(StateMachineCommand object) {
         logger.info("Received request: {}", object.toString());
         raftServer.set(object.key(), object.value());
-    }
-
-    public ServerState getServerState() {
-        return raftServer.getServerState();
     }
 }
