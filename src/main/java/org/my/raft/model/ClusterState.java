@@ -1,4 +1,4 @@
-package org.my.raft.model.cluster;
+package org.my.raft.model;
 
 import java.util.HashSet;
 import java.util.List;

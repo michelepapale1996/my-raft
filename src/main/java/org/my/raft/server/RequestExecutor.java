@@ -22,6 +22,7 @@ public class RequestExecutor {
 
     public Map<String, AppendEntriesResponse> performAppendEntriesRequests(Map<String, AppendEntriesRequest> appendEntriesRequestsForOtherHosts) {
         Map<String, AppendEntriesResponse> responsesByServer = new HashMap<>();
+        // todo: send request in parallel ?
         for (Map.Entry<String, AppendEntriesRequest> entry: appendEntriesRequestsForOtherHosts.entrySet()) {
             String serverId = entry.getKey();
             AppendEntriesRequest appendEntriesRequest = entry.getValue();

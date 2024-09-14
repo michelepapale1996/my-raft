@@ -1,8 +1,10 @@
 package org.my.raft.server;
 
+import org.my.raft.model.ServerRole;
+import org.my.raft.model.ServerState;
 import org.my.raft.model.api.append.entries.AppendEntriesRequest;
 import org.my.raft.model.api.append.entries.AppendEntriesResponse;
-import org.my.raft.model.cluster.ClusterState;
+import org.my.raft.model.ClusterState;
 import org.my.raft.model.log.Log;
 import org.my.raft.model.log.LogEntry;
 import org.my.raft.model.state.machine.StateMachine;
@@ -22,7 +24,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class RaftServer {
 
     private static final Logger logger = LoggerFactory.getLogger(RaftServer.class);
-    enum ServerRole { LEADER, CANDIDATE, FOLLOWER }
     private ClusterState clusterState;
     private Scheduler scheduler;
     private RequestAcceptor requestAcceptor;
@@ -69,7 +70,7 @@ public class RaftServer {
         return requestExecutor;
     }
 
-    public RequestAcceptor getRequestHandler() {
+    public RequestAcceptor getRequestAcceptor() {
         return requestAcceptor;
     }
 
@@ -163,6 +164,10 @@ public class RaftServer {
         assert requestAcceptor != null;
         assert leaderElectionHandler != null;
         assert requestExecutor != null;
+
+        // todo: add a checker to assert that:
+        // - the cluster state is not empty
+        // - the requestExecutor contains all the servers in the cluster state
 
         scheduler.startLeaderElectionHandler();
     }

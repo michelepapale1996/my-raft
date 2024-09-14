@@ -1,4 +1,4 @@
-package org.my.raft.server;
+package org.my.raft.model;
 
 import org.my.raft.model.log.Log;
 import org.my.raft.model.state.machine.StateMachine;
@@ -9,7 +9,7 @@ import java.util.UUID;
 public final class ServerState {
     private final UUID uuid;
     private final Log log;
-    private final RaftServer.ServerRole status;
+    private final ServerRole status;
     private final StateMachine stateMachine;
     private final int currentIndex;
     private final int commitIndex;
@@ -17,7 +17,7 @@ public final class ServerState {
 
     public static ServerState of(UUID uuid,
                                  Log log,
-                                 RaftServer.ServerRole status,
+                                 ServerRole status,
                                  StateMachine stateMachine,
                                  int currentIndex, int commitIndex, int lastAppliedIndex) {
         return new ServerState(uuid, log, status, stateMachine, currentIndex, commitIndex, lastAppliedIndex);
@@ -25,7 +25,7 @@ public final class ServerState {
 
     private ServerState(UUID uuid,
                         Log log,
-                        RaftServer.ServerRole status,
+                        ServerRole status,
                         StateMachine stateMachine,
                         int currentIndex,
                         int commitIndex,
@@ -47,7 +47,7 @@ public final class ServerState {
         return log;
     }
 
-    public RaftServer.ServerRole getStatus() {
+    public ServerRole getStatus() {
         return status;
     }
 

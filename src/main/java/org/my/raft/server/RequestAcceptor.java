@@ -1,5 +1,6 @@
 package org.my.raft.server;
 
+import jakarta.ws.rs.NotFoundException;
 import org.my.raft.model.api.append.entries.AppendEntriesRequest;
 import org.my.raft.model.api.append.entries.AppendEntriesResponse;
 import org.my.raft.model.api.voting.RequestVoteRequest;
@@ -47,7 +48,11 @@ public class RequestAcceptor {
     }
 
     public StateMachineCommand get(String key) {
-        return new StateMachineCommand(key, raftServer.getStateMachine().get(key));
+        Optional<String> optionalValue = raftServer.getStateMachine().get(key);
+        if (optionalValue.isEmpty()) {
+            throw new NotFoundException();
+        }
+        return new StateMachineCommand(key, optionalValue.get());
     }
 
     public void set(StateMachineCommand object) {

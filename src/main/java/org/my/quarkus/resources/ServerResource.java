@@ -9,7 +9,7 @@ import org.my.raft.model.api.append.entries.AppendEntriesResponse;
 import org.my.raft.model.api.voting.RequestVoteRequest;
 import org.my.raft.model.api.voting.RequestVoteResponse;
 import org.my.raft.server.RaftServer;
-import org.my.raft.server.ServerState;
+import org.my.raft.model.ServerState;
 
 // This class is not a REST endpoint, but for the sake of simplicity, we will use it as one
 @Path("/raft")
@@ -21,13 +21,13 @@ public class ServerResource {
     @POST
     @Path("/appendEntries")
     public AppendEntriesResponse appendEntries(AppendEntriesRequest appendEntriesRequest) {
-        return raftServer.getRequestHandler().appendEntries(appendEntriesRequest);
+        return raftServer.getRequestAcceptor().appendEntries(appendEntriesRequest);
     }
 
     @POST
     @Path("/requestVote")
     public RequestVoteResponse requestVote(RequestVoteRequest requestVoteRequest) {
-        return raftServer.getRequestHandler().requestVote(requestVoteRequest);
+        return raftServer.getRequestAcceptor().requestVote(requestVoteRequest);
     }
 
     @GET

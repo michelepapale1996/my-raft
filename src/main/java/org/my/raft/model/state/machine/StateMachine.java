@@ -1,6 +1,7 @@
 package org.my.raft.model.state.machine;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class StateMachine {
@@ -10,8 +11,8 @@ public class StateMachine {
         state.put(command.key(), command.value());
     }
 
-    public String get(String key) {
-        return state.get(key);
+    public Optional<String> get(String key) {
+        return Optional.ofNullable(state.get(key));
     }
 
     @Override

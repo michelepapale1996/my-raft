@@ -10,7 +10,7 @@ import org.my.quarkus.client.ServerRestClient;
 import org.my.raft.server.LeaderElectionHandler;
 import org.my.raft.server.RequestAcceptor;
 import org.my.raft.server.Scheduler;
-import org.my.raft.model.cluster.ClusterState;
+import org.my.raft.model.ClusterState;
 import org.my.raft.server.RaftServer;
 import org.my.raft.server.RequestExecutor;
 import org.my.raft.server.ServerClient;

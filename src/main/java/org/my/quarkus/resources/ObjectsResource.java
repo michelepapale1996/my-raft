@@ -16,12 +16,12 @@ public class ObjectsResource {
     @GET
     @Path("/{key}")
     public StateMachineCommand get(String key) {
-        return raftServer.getRequestHandler().get(key);
+        return raftServer.getRequestAcceptor().get(key);
     }
 
     @POST
     public StateMachineCommand set(StateMachineCommand object) {
-        raftServer.getRequestHandler().set(object);
-        return raftServer.getRequestHandler().get(object.key());
+        raftServer.getRequestAcceptor().set(object);
+        return raftServer.getRequestAcceptor().get(object.key());
     }
 }

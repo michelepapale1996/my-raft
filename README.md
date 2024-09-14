@@ -17,7 +17,7 @@ export cluster_hosts=http://localhost:9092,http://localhost:9093; export quarkus
 
 ## Endpoints
 - `GET /raft/state`: Get the current status of the node
-- `GET /objects/{:id}`: Retrieve a value from the Raft cluster. {:id} is the key of the object you want to retrieve
+- `GET /objects/{:id}`: Retrieve a value from the Raft cluster. {:id} is the key of the object you want to retrieve. In case the object does not exist, a 404 http status code is returned.
 - `POST /objects`: Set a value in the Raft cluster. The body must be a JSON object with the following structure:
 ```json
 {
