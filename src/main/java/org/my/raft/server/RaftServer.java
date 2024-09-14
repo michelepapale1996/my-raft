@@ -1,13 +1,17 @@
 package org.my.raft.server;
 
+import jakarta.ws.rs.NotFoundException;
 import org.my.raft.model.ServerRole;
 import org.my.raft.model.ServerState;
 import org.my.raft.model.api.append.entries.AppendEntriesRequest;
 import org.my.raft.model.api.append.entries.AppendEntriesResponse;
 import org.my.raft.model.ClusterState;
+import org.my.raft.model.api.voting.RequestVoteRequest;
+import org.my.raft.model.api.voting.RequestVoteResponse;
 import org.my.raft.model.log.Log;
 import org.my.raft.model.log.LogEntry;
 import org.my.raft.model.state.machine.StateMachine;
+import org.my.raft.model.state.machine.StateMachineCommand;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,27 +28,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class RaftServer {
 
     private static final Logger logger = LoggerFactory.getLogger(RaftServer.class);
-    private ClusterState clusterState;
     private Scheduler scheduler;
-    private RequestAcceptor requestAcceptor;
-    private LeaderElectionHandler leaderElectionHandler;
     private RequestExecutor requestExecutor;
-
-
-    // fields used by followers and candidates
-    private volatile Optional<String> votedFor = Optional.empty();
-    private static final AtomicBoolean receivedHeartbeat = new AtomicBoolean(false);
-
-
-    // fields used by leaders
-
-    // for each server, index of the next log entry to send to that server
-    // (initialized to leader last log index + 1)
-    private final Map<String, Integer> nextIndexByHost = new ConcurrentHashMap<>();
-    // for each server, index of the highest log entry known to be replicated on server
-    // (initialized to 0, increases monotonically)
-    private final Map<String, Integer> matchIndexByHost = new ConcurrentHashMap<>();
-
+    private ClusterState clusterState;
 
     // fields used by all servers
     private final UUID uuid = UUID.randomUUID();
@@ -57,10 +43,20 @@ public class RaftServer {
     // index of the highest log entry applied to state machine (initialized to 0, increases monotonically)
     private final AtomicInteger lastApplied = new AtomicInteger(-1);
 
+    // fields used by leaders
 
-    public void setRequestAcceptor(RequestAcceptor requestAcceptor) {
-        this.requestAcceptor = requestAcceptor;
-    }
+    // for each server, index of the next log entry to send to that server
+    // (initialized to leader last log index + 1)
+    private final Map<String, Integer> nextIndexByHost = new ConcurrentHashMap<>();
+    // for each server, index of the highest log entry known to be replicated on server
+    // (initialized to 0, increases monotonically)
+    private final Map<String, Integer> matchIndexByHost = new ConcurrentHashMap<>();
+
+
+    // fields used by followers and candidates
+    private volatile Optional<String> votedFor = Optional.empty();
+    private static final AtomicBoolean receivedHeartbeat = new AtomicBoolean(false);
+
 
     public void setRequestExecutor(RequestExecutor requestExecutor) {
         this.requestExecutor = requestExecutor;
@@ -70,24 +66,12 @@ public class RaftServer {
         return requestExecutor;
     }
 
-    public RequestAcceptor getRequestAcceptor() {
-        return requestAcceptor;
-    }
-
-    public void setLeaderElectionHandler(LeaderElectionHandler leaderElectionHandler) {
-        this.leaderElectionHandler = leaderElectionHandler;
-    }
-
     public void setClusterState(ClusterState clusterState) {
         this.clusterState = clusterState;
     }
 
     public ClusterState getClusterState() {
         return clusterState;
-    }
-
-    public StateMachine getStateMachine() {
-        return stateMachine;
     }
 
     public void setScheduler(Scheduler scheduler) {
@@ -104,14 +88,6 @@ public class RaftServer {
 
     public void setCurrentTerm(int term) {
         currentTerm.set(term);
-    }
-
-    public Optional<String> getVotedFor() {
-        return votedFor;
-    }
-
-    public void setVotedFor(String candidateId) {
-        votedFor = Optional.ofNullable(candidateId);
     }
 
     public boolean isLeader() {
@@ -158,24 +134,59 @@ public class RaftServer {
         return log;
     }
 
+    public ServerState getServerState() {
+        ServerState serverState = ServerState.of(uuid, log, status, stateMachine, currentTerm.get(),
+                commitIndex.get(), lastApplied.get(), nextIndexByHost, matchIndexByHost);
+        logger.info("Current ServerState: {}", serverState);
+        return serverState;
+    }
+
     public void start() {
         assert clusterState != null;
         assert scheduler != null;
-        assert requestAcceptor != null;
-        assert leaderElectionHandler != null;
         assert requestExecutor != null;
 
-        // todo: add a checker to assert that:
+        // todo: add a checker to perform assertions as:
         // - the cluster state is not empty
         // - the requestExecutor contains all the servers in the cluster state
 
         scheduler.startLeaderElectionHandler();
     }
 
-    public ServerState getServerState() {
-        ServerState serverState = ServerState.of(uuid, log, status, stateMachine, currentTerm.get(), commitIndex.get(), lastApplied.get());
-        logger.info("Current ServerState: {}", serverState);
-        return serverState;
+    public void setStateMachineCommand(StateMachineCommand command) {
+        logger.info("Received set request with command: {}", command);
+
+        if (!isLeader()) {
+            throw new IllegalStateException("I'm not a leader, I cannot set a value");
+        }
+        int offset = log.append(command.key(), command.value(), currentTerm.get());
+
+        logger.info("Sending append entries to followers");
+        triggerHeartbeat();
+
+        try {
+            // block thread till lastApplied is not set to currentTerm
+            if (log.lastLogEntry().isEmpty()) {
+                throw new IllegalStateException("Last log entry is not present when setting a value");
+            }
+
+            while (lastApplied.get() != offset) {
+                logger.info("Waiting for lastApplied to be set to {}", offset);
+                Thread.sleep(500);
+            }
+
+
+        } catch (Exception e) {
+            logger.error("Error sending append entries", e);
+        }
+    }
+
+    public StateMachineCommand getStateMachineCommand(String key) {
+        Optional<String> optionalValue = this.stateMachine.get(key);
+        if (optionalValue.isEmpty()) {
+            throw new NotFoundException();
+        }
+        return new StateMachineCommand(key, optionalValue.get());
     }
 
     private Map<String, AppendEntriesRequest> buildAppendEntriesRequests() {
@@ -333,36 +344,12 @@ public class RaftServer {
         );
     }
 
-    public void set(String key, String value) {
-        if (!isLeader()) {
-            throw new IllegalStateException("I'm not a leader, I cannot set a value");
-        }
-        int offset = log.append(key, value, currentTerm.get());
-
-        logger.info("Sending append entries to followers");
-        triggerHeartbeat();
-
-        try {
-            // block thread till lastApplied is not set to currentTerm
-            if (log.lastLogEntry().isEmpty()) {
-                throw new IllegalStateException("Last log entry is not present when setting a value");
-            }
-
-            while (lastApplied.get() != offset) {
-                logger.info("Waiting for lastApplied to be set to {}", offset);
-                Thread.sleep(500);
-            }
-
-
-        } catch (Exception e) {
-            logger.error("Error sending append entries", e);
-        }
-    }
-
     /**
      * This method is called by followers to accept append entries requests
      */
     public synchronized AppendEntriesResponse acceptAppendEntries(AppendEntriesRequest appendEntriesRequest) {
+        logger.info(appendEntriesRequest.toString());
+
         if (this.isLeader()) {
             logger.error("Received append entries request from another leader. Current leader is {}", this.getUuid());
             return new AppendEntriesResponse(this.getCurrentTerm(), false);
@@ -426,6 +413,26 @@ public class RaftServer {
 
             return new AppendEntriesResponse(this.currentTerm.get(), true);
         }
+    }
+
+    public RequestVoteResponse requestVote(RequestVoteRequest requestVoteRequest) {
+        logger.info(requestVoteRequest.toString());
+
+        if (requestVoteRequest.term() < this.getCurrentTerm()) {
+            return new RequestVoteResponse(this.getCurrentTerm(), false);
+        }
+
+        Optional<String> votedForOptional = this.votedFor;
+        Optional<LogEntry> logEntry = this.log.entryAt(requestVoteRequest.lastLogIndex());
+
+        if ((votedForOptional.isEmpty() || votedForOptional.get().equals(requestVoteRequest.candidateId())) &&
+                (logEntry.isEmpty() || logEntry.get().term() == requestVoteRequest.lastLogTerm())) {
+            this.switchToFollower();
+            this.setCurrentTerm(requestVoteRequest.term());
+            this.votedFor = Optional.of(requestVoteRequest.candidateId());
+            return new RequestVoteResponse(requestVoteRequest.term(), true);
+        }
+        return new RequestVoteResponse(this.getCurrentTerm(), false);
     }
 
 }

@@ -7,8 +7,6 @@ import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.RestClientBuilder;
 import org.my.quarkus.client.ServerRestClient;
-import org.my.raft.server.LeaderElectionHandler;
-import org.my.raft.server.RequestAcceptor;
 import org.my.raft.server.Scheduler;
 import org.my.raft.model.ClusterState;
 import org.my.raft.server.RaftServer;
@@ -43,14 +41,8 @@ public class ServerBootstrapper {
         Scheduler scheduler = new Scheduler(server, 10000, 30000, 2000);
         server.setScheduler(scheduler);
 
-        RequestAcceptor requestAcceptor = new RequestAcceptor(server);
-        server.setRequestAcceptor(requestAcceptor);
-
         RequestExecutor requestExecutor = new RequestExecutor(buildRestClients(clusterState));
         server.setRequestExecutor(requestExecutor);
-
-        LeaderElectionHandler leaderElectionHandler = new LeaderElectionHandler(server);
-        server.setLeaderElectionHandler(leaderElectionHandler);
 
         logger.info("Starting server with uuid {}", server.getUuid());
         server.start();

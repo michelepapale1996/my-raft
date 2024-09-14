@@ -3,6 +3,7 @@ package org.my.raft.model;
 import org.my.raft.model.log.Log;
 import org.my.raft.model.state.machine.StateMachine;
 
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -11,32 +12,42 @@ public final class ServerState {
     private final Log log;
     private final ServerRole status;
     private final StateMachine stateMachine;
-    private final int currentIndex;
+    private final int currentTerm;
     private final int commitIndex;
     private final int lastAppliedIndex;
+
+    private final Map<String, Integer> nextIndexByHost;
+
+    private final Map<String, Integer> matchIndexByHost;
 
     public static ServerState of(UUID uuid,
                                  Log log,
                                  ServerRole status,
                                  StateMachine stateMachine,
-                                 int currentIndex, int commitIndex, int lastAppliedIndex) {
-        return new ServerState(uuid, log, status, stateMachine, currentIndex, commitIndex, lastAppliedIndex);
+                                 int currentTerm, int commitIndex, int lastAppliedIndex,
+                                 Map<String, Integer> nextIndexByHost,
+                                 Map<String, Integer> matchIndexByHost) {
+        return new ServerState(uuid, log, status, stateMachine, currentTerm, commitIndex, lastAppliedIndex, nextIndexByHost, matchIndexByHost);
     }
 
     private ServerState(UUID uuid,
                         Log log,
                         ServerRole status,
                         StateMachine stateMachine,
-                        int currentIndex,
+                        int currentTerm,
                         int commitIndex,
-                        int lastAppliedIndex) {
+                        int lastAppliedIndex,
+                        Map<String, Integer> nextIndexByHost,
+                        Map<String, Integer> matchIndexByHost) {
         this.uuid = uuid;
         this.log = log;
         this.status = status;
         this.stateMachine = stateMachine;
-        this.currentIndex = currentIndex;
+        this.currentTerm = currentTerm;
         this.commitIndex = commitIndex;
         this.lastAppliedIndex = lastAppliedIndex;
+        this.nextIndexByHost = nextIndexByHost;
+        this.matchIndexByHost = matchIndexByHost;
     }
 
     public UUID getUuid() {
@@ -55,8 +66,8 @@ public final class ServerState {
         return stateMachine;
     }
 
-    public int getCurrentIndex() {
-        return currentIndex;
+    public int getCurrentTerm() {
+        return currentTerm;
     }
 
     public int getCommitIndex() {
@@ -67,36 +78,39 @@ public final class ServerState {
         return lastAppliedIndex;
     }
 
+    public Map<String, Integer> getNextIndexByHost() {
+        return nextIndexByHost;
+    }
+
+    public Map<String, Integer> getMatchIndexByHost() {
+        return matchIndexByHost;
+    }
+
     @Override
-    public boolean equals(Object obj) {
-        if (obj == this) return true;
-        if (obj == null || obj.getClass() != this.getClass()) return false;
-        var that = (ServerState) obj;
-        return Objects.equals(this.uuid, that.uuid) &&
-                Objects.equals(this.log, that.log) &&
-                Objects.equals(this.status, that.status) &&
-                Objects.equals(this.stateMachine, that.stateMachine) &&
-                this.currentIndex == that.currentIndex &&
-                this.commitIndex == that.commitIndex &&
-                this.lastAppliedIndex == that.lastAppliedIndex;
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        ServerState that = (ServerState) o;
+        return currentTerm == that.currentTerm && Objects.equals(uuid, that.uuid) && status == that.status;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(uuid, log, status, stateMachine, currentIndex, commitIndex, lastAppliedIndex);
+        return Objects.hash(uuid, status, currentTerm);
     }
 
     @Override
     public String toString() {
-        return "ServerState[" +
-                "uuid=" + uuid + ", " +
-                "log=" + log + ", " +
-                "status=" + status + ", " +
-                "stateMachine=" + stateMachine + ", " +
-                "currentIndex=" + currentIndex + ", " +
-                "commitIndex=" + commitIndex + ", " +
-                "lastAppliedIndex=" + lastAppliedIndex + ']';
+        return "ServerState{" +
+                "uuid=" + uuid +
+                ", log=" + log +
+                ", status=" + status +
+                ", stateMachine=" + stateMachine +
+                ", currentTerm=" + currentTerm +
+                ", commitIndex=" + commitIndex +
+                ", lastAppliedIndex=" + lastAppliedIndex +
+                ", nextIndexByHost=" + nextIndexByHost +
+                ", matchIndexByHost=" + matchIndexByHost +
+                '}';
     }
-
-
 }

@@ -57,13 +57,14 @@ Finally, if you start again the crashed follower node, it should be able to re-s
 
 ## Limitations (up to now :D)
 - The log is not persisted to disk, for the moment is in memory
+- The recovery logic for the StateMachine is not implemented yet. Up to now, if a node crashes, the StateMachine will eventually reach a consistent state. When, however, the log will be persisted to disk, the recovery logic will be needed to ensure that the StateMachine will be replaying commands from the log
 - The log replication is working but the election restriction at 5.4.1 is not implemented yet. This leads to the fact that the leader can be elected even if it has not the most up-to-date log
 - Cluster membership changes are not implemented yet
+- Log compaction is not implemented yet
+- A client must be written to interact with the Raft cluster. Up to now, the interaction is done via HTTP requests 
 
 ## Open points & Improvements
 - [X] Add unit tests to Log
 - [ ] Add unit and integration tests on RaftServer
 - [ ] Ensure consistency and isolation of the algorithm. An idea could be to make the RaftServer state immutable for better concurrency control
-- [ ] Whenever a client issues a command (also for get requests), validation must be performed to ensure that the node is the leader
-- [ ] The client set request is synchronous to the heartbeating mechanism
 - [ ] Every time an illegal state is reached, the node should log it's current state

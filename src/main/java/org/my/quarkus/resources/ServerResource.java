@@ -21,13 +21,13 @@ public class ServerResource {
     @POST
     @Path("/appendEntries")
     public AppendEntriesResponse appendEntries(AppendEntriesRequest appendEntriesRequest) {
-        return raftServer.getRequestAcceptor().appendEntries(appendEntriesRequest);
+        return raftServer.acceptAppendEntries(appendEntriesRequest);
     }
 
     @POST
     @Path("/requestVote")
     public RequestVoteResponse requestVote(RequestVoteRequest requestVoteRequest) {
-        return raftServer.getRequestAcceptor().requestVote(requestVoteRequest);
+        return raftServer.requestVote(requestVoteRequest);
     }
 
     @GET

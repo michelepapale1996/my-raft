@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Optional;
 
-public class LeaderElectionHandler implements Runnable {
+public class LeaderElectionHandler {
 
     private final RaftServer raftServer;
     private static final Logger logger = LoggerFactory.getLogger(LeaderElectionHandler.class);
@@ -18,26 +18,7 @@ public class LeaderElectionHandler implements Runnable {
         this.raftServer = raftServer;
     }
 
-    @Override
-    public void run() {
-        try {
-            // if I'm the leader, I don't need to trigger an election
-            if (this.raftServer.isLeader()) {
-                logger.info("I'm the leader, no need to trigger an election");
-                return;
-            }
-
-            if (!raftServer.hasReceivedHeartbeat()) {
-                logger.info("Starting election since I've not received the heartbeat...");
-                triggerElection();
-            }
-            raftServer.resetReceivedHeartbeat();
-        } catch (Exception e) {
-            logger.error("Error while running leader election handler", e);
-        }
-    }
-
-    private void triggerElection() {
+    void triggerElection() {
         this.raftServer.switchToCandidate();
 
         logger.info("Starting election for term {}", this.raftServer.getCurrentTerm());

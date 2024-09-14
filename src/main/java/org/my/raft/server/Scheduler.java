@@ -17,7 +17,7 @@ public class Scheduler {
     private final int upperBoundElectionTimeout;
     private final int heartbeatTimeout;
     private final RaftServer raftServer;
-    private ScheduledFuture<?> scheduledFuture;
+    private volatile ScheduledFuture<?> scheduledFuture;
 
     public Scheduler(RaftServer server, int lowerBoundElectionTimeout, int upperBoundElectionTimeout, int heartbeatTimeout) {
         this.raftServer = server;
@@ -26,11 +26,28 @@ public class Scheduler {
         this.heartbeatTimeout = heartbeatTimeout;
     }
 
-    public void startLeaderElectionHandler() {
+    void startLeaderElectionHandler() {
         // todo: in this way the timeout is static
         int electionTimeout = (int) (Math.random() * (upperBoundElectionTimeout - lowerBoundElectionTimeout) + lowerBoundElectionTimeout);
+        LeaderElectionHandler leaderElectionHandler = new LeaderElectionHandler(this.raftServer);
         leaderExecutorService.scheduleAtFixedRate(
-                new LeaderElectionHandler(this.raftServer),
+                () -> {
+                    try {
+                        // if I'm the leader, I don't need to trigger an election
+                        if (this.raftServer.isLeader()) {
+                            logger.info("I'm the leader, no need to trigger an election");
+                            return;
+                        }
+
+                        if (!raftServer.hasReceivedHeartbeat()) {
+                            logger.info("Starting election since I've not received the heartbeat...");
+                            leaderElectionHandler.triggerElection();
+                        }
+                        raftServer.resetReceivedHeartbeat();
+                    } catch (Exception e) {
+                        logger.error("Error while running leader election handler", e);
+                    }
+                },
                 electionTimeout,
                 electionTimeout,
                 java.util.concurrent.TimeUnit.MILLISECONDS
@@ -38,11 +55,11 @@ public class Scheduler {
     }
 
     // todo: do I really like this synchronized?
-    public synchronized Future<?> scheduleNow(Runnable runnable) {
+    synchronized Future<?> scheduleNow(Runnable runnable) {
         return heartbeatExecutorService.submit(runnable);
     }
 
-    public synchronized void startSendingHeartbeats() {
+    synchronized void startSendingHeartbeats() {
         scheduledFuture = heartbeatExecutorService.scheduleAtFixedRate(
                 () -> {
                     try {
@@ -59,7 +76,7 @@ public class Scheduler {
 
     }
 
-    public synchronized void stopSendingHeartbeats() {
+    synchronized void stopSendingHeartbeats() {
         if (scheduledFuture != null) {
             scheduledFuture.cancel(true);
         }
