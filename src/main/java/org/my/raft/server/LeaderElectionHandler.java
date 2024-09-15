@@ -44,12 +44,12 @@ public class LeaderElectionHandler {
     }
 
     private RequestVoteRequest buildRequestVoteRequest(RaftServer raftServer) {
-        Optional<LogEntry> lastLogEntry = raftServer.getLog().lastLogEntry();
         int lastLogIndex = 0;
         int lastLogTerm = 0;
-        if (lastLogEntry.isPresent()) {
-            lastLogIndex = lastLogEntry.get().index();
-            lastLogTerm = lastLogEntry.get().term();
+        if (raftServer.getLog().size() > 0) {
+            LogEntry logEntry = raftServer.getLog().entryAt(raftServer.getLog().size() - 1);
+            lastLogIndex = logEntry.index();
+            lastLogTerm = logEntry.term();
         }
         RequestVoteRequest requestVoteRequest = new RequestVoteRequest(
                 raftServer.getCurrentTerm(),

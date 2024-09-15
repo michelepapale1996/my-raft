@@ -19,42 +19,12 @@ public class Log {
         return offset;
     }
 
-    // todo: to improve
-    public synchronized void put(int index, LogEntry logEntry) {
-        logEntries.set(index, logEntry);
-        // remove all entries after index
-        logEntries.subList(index + 1, logEntries.size()).clear();
-    }
-
-    public synchronized Optional<LogEntry> entryAt(int index) {
+    public synchronized LogEntry entryAt(int index) {
         if (index < 0 || index >= logEntries.size()) {
-            return Optional.empty();
-        } else {
-            return Optional.of(logEntries.get(index));
-        }
-    }
-
-    public synchronized Optional<LogEntry> lastLogEntry() {
-        if (logEntries.isEmpty()) {
-            return Optional.empty();
-        }
-        return nextEntry(this.logEntries.size() - 1);
-    }
-
-    /**
-     * Returns the log entries starting from the given index.
-     * In case from index is negative, an IllegalArgumentException is thrown.
-     */
-    public synchronized Optional<LogEntry> nextEntry(int previousIndex) {
-        if (previousIndex < 0) {
-            throw new IllegalArgumentException("previousIndex cannot be negative, given " + previousIndex);
+            throw new IllegalArgumentException("Index out of bounds: " + index + " for log size: " + logEntries.size());
         }
 
-        if (previousIndex >= logEntries.size()) {
-            return Optional.empty();
-        }
-
-        return Optional.of(logEntries.subList(previousIndex, previousIndex + 1).get(0));
+        return logEntries.get(index);
     }
 
     @Override

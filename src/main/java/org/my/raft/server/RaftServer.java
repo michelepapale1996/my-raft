@@ -34,14 +34,14 @@ public class RaftServer {
 
     // fields used by all servers
     private final UUID uuid = UUID.randomUUID();
-    private final Log log = new Log();
     private volatile ServerRole status = ServerRole.FOLLOWER;
-    private final StateMachine stateMachine = new StateMachine();
     private final AtomicInteger currentTerm = new AtomicInteger(0);
     // index of the highest log entry known to be committed (initialized to 0, increases monotonically)
     private final AtomicInteger commitIndex = new AtomicInteger(-1);
     // index of the highest log entry applied to state machine (initialized to 0, increases monotonically)
     private final AtomicInteger lastApplied = new AtomicInteger(-1);
+    private final Log log = new Log();
+    private final StateMachine stateMachine = new StateMachine();
 
     // fields used by leaders
 
@@ -86,51 +86,46 @@ public class RaftServer {
         return currentTerm.get();
     }
 
-    public void setCurrentTerm(int term) {
+    private void setCurrentTerm(int term) {
         currentTerm.set(term);
     }
 
-    public boolean isLeader() {
+    boolean isLeader() {
         return status == ServerRole.LEADER;
     }
 
-    public void switchToFollower() {
+    private void switchToFollower() {
         status = ServerRole.FOLLOWER;
         scheduler.stopSendingHeartbeats();
     }
 
-    public void switchToCandidate() {
+    void switchToCandidate() {
         status = ServerRole.CANDIDATE;
         currentTerm.incrementAndGet();
         votedFor = Optional.empty();
     }
 
-    public void switchToLeader() {
+    void switchToLeader() {
         status = ServerRole.LEADER;
 
         // initialize nextIndexByHost and matchIndexByHost
         for (String serverId: clusterState.getOtherClusterNodes()) {
-            Optional<LogEntry> entry = log.lastLogEntry();
-            if (entry.isEmpty()) {
-                nextIndexByHost.put(serverId, 0);
-            } else {
-                nextIndexByHost.put(serverId, entry.get().index() + 1);
-            }
+            nextIndexByHost.put(serverId, log.size());
             matchIndexByHost.put(serverId, -1);
         }
 
         scheduler.startSendingHeartbeats();
     }
 
-    public boolean hasReceivedHeartbeat() {
+    boolean hasReceivedHeartbeat() {
         return receivedHeartbeat.get();
     }
 
-    public void resetReceivedHeartbeat() {
+    void resetReceivedHeartbeat() {
         receivedHeartbeat.set(false);
     }
 
-    public Log getLog() {
+    Log getLog() {
         return log;
     }
 
@@ -166,7 +161,7 @@ public class RaftServer {
 
         try {
             // block thread till lastApplied is not set to currentTerm
-            if (log.lastLogEntry().isEmpty()) {
+            if (log.size() == 0) {
                 throw new IllegalStateException("Last log entry is not present when setting a value");
             }
 
@@ -200,7 +195,7 @@ public class RaftServer {
 
             AppendEntriesRequest appendEntriesRequest;
             // in case the log is empty, send just an heartbeat
-            if (log.lastLogEntry().isEmpty()) {
+            if (log.size() == 0) {
                 appendEntriesRequest = new AppendEntriesRequest(
                         currentTerm.get(),
                         uuid.toString(),
@@ -210,30 +205,20 @@ public class RaftServer {
                         commitIndex.get()
                 );
             } else {
-                LogEntry lastLogEntry = log.lastLogEntry().get();
+                int lastLogIndex = log.size() - 1;
+                int lastLogTerm = log.entryAt(lastLogIndex).term();
                 // check if the follower is lagging behind or is up-to-date
-                if (lastLogEntry.index() >= nextIndexByHost.get(serverId)) {
+                if (lastLogIndex >= nextIndexByHost.get(serverId)) {
                     // follower is missing some log entries. Send the first missing entry
 
-                    if (log.nextEntry(nextIndexByHost.get(serverId)).isEmpty()) {
-                        logger.error("Log entry at index {} is not present in the log. " +
-                                "However it is not possible since I'm the leader and my last log entry with offset {} is higher than the entry of the follower {}",
-                                nextIndexByHost.get(serverId),
-                                lastLogEntry.index(),
-                                serverId
-                        );
-                        throw new IllegalStateException();
-                    }
-
-                    Optional<LogEntry> lastLogEntryOnFollowerLogOptional = log.entryAt(nextIndexByHost.get(serverId) - 1);
-                    List<LogEntry> entries = Collections.singletonList(log.nextEntry(nextIndexByHost.get(serverId)).get());
-
-                    if (lastLogEntryOnFollowerLogOptional.isPresent()) {
+                    List<LogEntry> entries = Collections.singletonList(log.entryAt(nextIndexByHost.get(serverId)));
+                    if (nextIndexByHost.get(serverId) > 0) {
+                        LogEntry lastLogEntryOnFollowerLog = log.entryAt(nextIndexByHost.get(serverId) - 1);
                         appendEntriesRequest = new AppendEntriesRequest(
                                 currentTerm.get(),
                                 uuid.toString(),
-                                lastLogEntryOnFollowerLogOptional.get().index(),
-                                lastLogEntryOnFollowerLogOptional.get().term(),
+                                lastLogEntryOnFollowerLog.index(),
+                                lastLogEntryOnFollowerLog.term(),
                                 entries,
                                 commitIndex.get()
                         );
@@ -252,8 +237,8 @@ public class RaftServer {
                     appendEntriesRequest = new AppendEntriesRequest(
                             currentTerm.get(),
                             uuid.toString(),
-                            lastLogEntry.index(),
-                            lastLogEntry.term(),
+                            lastLogIndex,
+                            lastLogTerm,
                             Collections.emptyList(),
                             commitIndex.get()
                     );
@@ -270,7 +255,7 @@ public class RaftServer {
      * This method is called by the leader to send heartbeats to followers
      * and to replicate log entries
      */
-    public void triggerHeartbeat() {
+    void triggerHeartbeat() {
         Map<String, AppendEntriesRequest> appendEntriesRequestsForOtherHosts = buildAppendEntriesRequests();
         logger.info("Computed append entries requests for other hosts: {}", appendEntriesRequestsForOtherHosts);
 
@@ -321,21 +306,11 @@ public class RaftServer {
                         // of matchIndex[i] ≥ N, and log[N].term == currentTerm: set commitIndex = N
                         List<Integer> matchIndexes = matchIndexByHost.values().stream().sorted().toList();
                         int N = matchIndexes.get(matchIndexes.size() / 2);
-                        if (N > commitIndex.get() && log.entryAt(N).isPresent() && log.entryAt(N).get().term() == currentTerm.get()) {
+                        if (N > commitIndex.get() && N < log.size() && log.entryAt(N).term() == currentTerm.get()) {
                             commitIndex.set(N);
                         }
 
-                        // If commitIndex > lastApplied: increment lastApplied, apply log[lastApplied] to state machine
-                        if (commitIndex.get() > lastApplied.get()) {
-                            for (int i = lastApplied.get() + 1; i <= commitIndex.get(); i++) {
-                                Optional<LogEntry> logEntry = log.entryAt(i);
-                                logEntry.ifPresent(entry -> {
-                                    logger.info("Applying command {} on leader", entry.command());
-                                    stateMachine.apply(entry.command());
-                                });
-                            }
-                            lastApplied.set(commitIndex.get());
-                        }
+                        this.applyCommandToStateMachine();
                     }
                 } catch (Exception e) {
                     logger.error("Error while sending heartbeat", e);
@@ -382,8 +357,8 @@ public class RaftServer {
             }
         }
 
-        if (log.entryAt(appendEntriesRequest.prevLogIndex()).isPresent() &&
-                log.entryAt(appendEntriesRequest.prevLogIndex()).get().term() != appendEntriesRequest.prevLogTerm()) {
+        if (appendEntriesRequest.prevLogIndex() < log.size() &&
+                log.entryAt(appendEntriesRequest.prevLogIndex()).term() != appendEntriesRequest.prevLogTerm()) {
             return new AppendEntriesResponse(this.currentTerm.get(), false);
         } else {
             for (LogEntry entry: appendEntriesRequest.entries()) {
@@ -392,24 +367,13 @@ public class RaftServer {
             }
 
             if (appendEntriesRequest.leaderCommit() > commitIndex.get()) {
-                int lastNewLogEntryIndex = log.lastLogEntry().map(LogEntry::index).orElse(-1);
+                int lastNewLogEntryIndex = log.size() - 1;
                 int lastCommittedOffset = Math.min(appendEntriesRequest.leaderCommit(), lastNewLogEntryIndex);
                 logger.info("Setting commit index to {}", lastCommittedOffset);
                 commitIndex.set(lastCommittedOffset);
             }
 
-            // apply the command to the state machine if commitIndex > lastApplied
-            if (commitIndex.get() > lastApplied.get()) {
-                for (int i = lastApplied.get() + 1; i <= commitIndex.get(); i++) {
-                    Optional<LogEntry> logEntry = log.entryAt(i);
-                    logEntry.ifPresent(it -> {
-                        logger.info("Applying command {} on follower", it.command());
-                        stateMachine.apply(it.command());
-                    });
-
-                }
-                lastApplied.set(commitIndex.get());
-            }
+            this.applyCommandToStateMachine();
 
             return new AppendEntriesResponse(this.currentTerm.get(), true);
         }
@@ -423,16 +387,27 @@ public class RaftServer {
         }
 
         Optional<String> votedForOptional = this.votedFor;
-        Optional<LogEntry> logEntry = this.log.entryAt(requestVoteRequest.lastLogIndex());
 
         if ((votedForOptional.isEmpty() || votedForOptional.get().equals(requestVoteRequest.candidateId())) &&
-                (logEntry.isEmpty() || logEntry.get().term() == requestVoteRequest.lastLogTerm())) {
+                (requestVoteRequest.lastLogIndex() >= this.log.size() || this.log.entryAt(requestVoteRequest.lastLogIndex()).term() == requestVoteRequest.lastLogTerm())) {
             this.switchToFollower();
             this.setCurrentTerm(requestVoteRequest.term());
             this.votedFor = Optional.of(requestVoteRequest.candidateId());
             return new RequestVoteResponse(requestVoteRequest.term(), true);
         }
         return new RequestVoteResponse(this.getCurrentTerm(), false);
+    }
+
+    private void applyCommandToStateMachine() {
+        // If commitIndex > lastApplied: increment lastApplied, apply log[lastApplied] to state machine
+        if (commitIndex.get() > lastApplied.get()) {
+            for (int i = lastApplied.get() + 1; i <= commitIndex.get(); i++) {
+                LogEntry logEntry = log.entryAt(i);
+                logger.info("Applying command {} on this server...", logEntry.command());
+                stateMachine.apply(logEntry.command());
+            }
+            lastApplied.set(commitIndex.get());
+        }
     }
 
 }
