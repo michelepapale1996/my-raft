@@ -128,12 +128,9 @@ public class RaftServer {
         return serverState;
     }
 
-    boolean isLeader() {
-        return status == ServerRole.LEADER;
-    }
-
-    void switchToFollower() {
+    void switchToFollowerWithTerm(int term) {
         status = ServerRole.FOLLOWER;
+        currentTerm.set(term);
         scheduler.stopSendingHeartbeats();
     }
 
@@ -166,7 +163,7 @@ public class RaftServer {
         scheduler.startLeaderElectionHandler(() -> {
             try {
                 // if I'm the leader, I don't need to trigger an election
-                if (this.isLeader()) {
+                if (status == ServerRole.LEADER) {
                     logger.info("I'm the leader, no need to trigger an election");
                     return;
                 }
@@ -186,7 +183,7 @@ public class RaftServer {
     public void setStateMachineCommand(StateMachineCommand command) {
         logger.info("Received set request with command: {}", command);
 
-        if (!isLeader()) {
+        if (status != ServerRole.LEADER) {
             throw new IllegalStateException("I'm not a leader, I cannot set a value");
         }
         int offset = log.append(command.key(), command.value(), currentTerm.get());
@@ -300,10 +297,10 @@ public class RaftServer {
 
                     if (maxTerm > this.currentTerm.get()) {
                         logger.info("Received heartbeat response with a higher term. I will become a follower");
-                        this.switchToFollower();
-                        this.currentTerm.set(maxTerm);
+                        this.switchToFollowerWithTerm(maxTerm);
                     } else {
 
+                        // I'm still the leader - process the responses
                         for (Map.Entry<String, AppendEntriesResponse> entry : responsesByServer.entrySet()) {
                             String serverId = entry.getKey();
                             AppendEntriesResponse response = entry.getValue();
@@ -354,7 +351,7 @@ public class RaftServer {
     public synchronized AppendEntriesResponse acceptAppendEntries(AppendEntriesRequest appendEntriesRequest) {
         logger.info(appendEntriesRequest.toString());
 
-        if (this.isLeader()) {
+        if (status == ServerRole.LEADER) {
             logger.error("Received append entries request from another leader. Current leader is {}", this.getUuid());
             return new AppendEntriesResponse(this.getCurrentTerm(), false);
         }
@@ -367,8 +364,7 @@ public class RaftServer {
 
         // in all other cases, I'm a follower that has received either a heartbeat or an append entries request
 
-        this.switchToFollower(); // if I was a candidate I will become a follower
-        this.currentTerm.set(appendEntriesRequest.term());
+        this.switchToFollowerWithTerm(appendEntriesRequest.term()); // if I was a candidate I will become a follower
 
         receivedHeartbeat.set(true);
 
@@ -377,7 +373,7 @@ public class RaftServer {
             if (appendEntriesRequest.prevLogIndex() == -1) {
                 for (LogEntry entry: appendEntriesRequest.entries()) {
                     logger.info("Appending first command {} on follower log", entry.command());
-                    log.append(entry.command().key(), entry.command().value(), this.currentTerm.get());
+                    log.append(entry.command().key(), entry.command().value(), entry.term());
                 }
                 return new AppendEntriesResponse(this.currentTerm.get(), true);
             } else {
@@ -419,8 +415,7 @@ public class RaftServer {
 
         if ((votedForOptional.isEmpty() || votedForOptional.get().equals(requestVoteRequest.candidateId())) &&
                 (requestVoteRequest.lastLogIndex() >= this.log.size() || this.log.entryAt(requestVoteRequest.lastLogIndex()).term() == requestVoteRequest.lastLogTerm())) {
-            this.switchToFollower();
-            this.currentTerm.set(requestVoteRequest.term());
+            this.switchToFollowerWithTerm(requestVoteRequest.term());
             this.votedFor = Optional.of(requestVoteRequest.candidateId());
             return new RequestVoteResponse(requestVoteRequest.term(), true);
         }

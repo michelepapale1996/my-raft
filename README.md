@@ -56,9 +56,9 @@ Finally, if you start again the crashed follower node, it should be able to re-s
 - There is a clear distinction between the Raft algorithm and the communication logic. The Raft algorithm is implemented inside the `org.my.raft` package, while the communication logic is implemented inside the `org.my.quarkus` package. This allows to easily change the communication logic without affecting the Raft algorithm.
 
 ## Limitations (up to now :D)
+- The log replication is working but the election restriction at 5.4.1 is not implemented yet. This leads to the fact that the leader can be elected even if it has not the most up-to-date log
 - The log is not persisted to disk, for the moment is in memory
 - The recovery logic for the StateMachine is not implemented yet. Up to now, if a node crashes, the StateMachine will eventually reach a consistent state. When, however, the log will be persisted to disk, the recovery logic will be needed to ensure that the StateMachine will be replaying commands from the log
-- The log replication is working but the election restriction at 5.4.1 is not implemented yet. This leads to the fact that the leader can be elected even if it has not the most up-to-date log
 - Cluster membership changes are not implemented yet
 - Log compaction is not implemented yet
 - A client must be written to interact with the Raft cluster. Up to now, the interaction is done via HTTP requests 
