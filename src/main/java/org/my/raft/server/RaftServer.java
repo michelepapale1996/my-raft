@@ -8,6 +8,7 @@ import org.my.raft.model.api.append.entries.AppendEntriesResponse;
 import org.my.raft.model.ClusterState;
 import org.my.raft.model.api.voting.RequestVoteRequest;
 import org.my.raft.model.api.voting.RequestVoteResponse;
+import org.my.raft.model.log.InMemoryLog;
 import org.my.raft.model.log.Log;
 import org.my.raft.model.log.LogEntry;
 import org.my.raft.model.state.machine.StateMachine;
@@ -40,7 +41,7 @@ public class RaftServer {
     private final AtomicInteger commitIndex = new AtomicInteger(-1);
     // index of the highest log entry applied to state machine (initialized to 0, increases monotonically)
     private final AtomicInteger lastApplied = new AtomicInteger(-1);
-    private final Log log = new Log();
+    private final Log log = new InMemoryLog();
     private final StateMachine stateMachine = new StateMachine();
 
     // fields used by leaders

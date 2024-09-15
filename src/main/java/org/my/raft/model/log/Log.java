@@ -6,36 +6,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-public class Log {
-    private final List<LogEntry> logEntries = new ArrayList<>();
+public interface Log {
 
-    public int size() {
-        return logEntries.size();
-    }
+    int size();
 
-    public synchronized int append(String key, String value, int term) {
-        int offset = logEntries.size();
-        logEntries.add(new LogEntry(new StateMachineCommand(key, value), term, offset));
-        return offset;
-    }
+    int append(String key, String value, int term);
 
-    public synchronized LogEntry entryAt(int index) {
-        if (index < 0 || index >= logEntries.size()) {
-            throw new IllegalArgumentException("Index out of bounds: " + index + " for log size: " + logEntries.size());
-        }
-
-        return logEntries.get(index);
-    }
-
-    @Override
-    public String toString() {
-        return "Log{" +
-                "logEntries=" + logEntries +
-                '}';
-    }
-
-    // used for serialization purposes. TODO: To be removed
-    public List<LogEntry> getLogEntries() {
-        return logEntries;
-    }
+    LogEntry entryAt(int index);
 }
