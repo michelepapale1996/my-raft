@@ -16,59 +16,33 @@ public class Scheduler {
     private final int lowerBoundElectionTimeout;
     private final int upperBoundElectionTimeout;
     private final int heartbeatTimeout;
-    private final RaftServer raftServer;
     private volatile ScheduledFuture<?> scheduledFuture;
 
-    public Scheduler(RaftServer server, int lowerBoundElectionTimeout, int upperBoundElectionTimeout, int heartbeatTimeout) {
-        this.raftServer = server;
+    public Scheduler(int lowerBoundElectionTimeout, int upperBoundElectionTimeout, int heartbeatTimeout) {
         this.lowerBoundElectionTimeout = lowerBoundElectionTimeout;
         this.upperBoundElectionTimeout = upperBoundElectionTimeout;
         this.heartbeatTimeout = heartbeatTimeout;
     }
 
-    void startLeaderElectionHandler() {
+    void startLeaderElectionHandler(Runnable task) {
         // todo: in this way the timeout is static
         int electionTimeout = (int) (Math.random() * (upperBoundElectionTimeout - lowerBoundElectionTimeout) + lowerBoundElectionTimeout);
-        LeaderElectionHandler leaderElectionHandler = new LeaderElectionHandler(this.raftServer);
-        leaderExecutorService.scheduleAtFixedRate(
-                () -> {
-                    try {
-                        // if I'm the leader, I don't need to trigger an election
-                        if (this.raftServer.isLeader()) {
-                            logger.info("I'm the leader, no need to trigger an election");
-                            return;
-                        }
 
-                        if (!raftServer.hasReceivedHeartbeat()) {
-                            logger.info("Starting election since I've not received the heartbeat...");
-                            leaderElectionHandler.triggerElection();
-                        }
-                        raftServer.resetReceivedHeartbeat();
-                    } catch (Exception e) {
-                        logger.error("Error while running leader election handler", e);
-                    }
-                },
+        leaderExecutorService.scheduleAtFixedRate(
+                task,
                 electionTimeout,
                 electionTimeout,
                 java.util.concurrent.TimeUnit.MILLISECONDS
         );
     }
 
-    // todo: do I really like this synchronized?
-    synchronized Future<?> scheduleNow(Runnable runnable) {
+    Future<?> scheduleNow(Runnable runnable) {
         return heartbeatExecutorService.submit(runnable);
     }
 
-    synchronized void startSendingHeartbeats() {
+    synchronized void startSendingHeartbeats(Runnable task) {
         scheduledFuture = heartbeatExecutorService.scheduleAtFixedRate(
-                () -> {
-                    try {
-                        logger.info("Sending heartbeats to followers...");
-                        this.raftServer.triggerHeartbeat();
-                    } catch (Exception e) {
-                        logger.error("Error while sending heartbeats", e);
-                    }
-                },
+                task,
                 heartbeatTimeout,
                 heartbeatTimeout,
                 TimeUnit.MILLISECONDS
@@ -79,6 +53,7 @@ public class Scheduler {
     synchronized void stopSendingHeartbeats() {
         if (scheduledFuture != null) {
             scheduledFuture.cancel(true);
+            scheduledFuture = null;
         }
     }
 }

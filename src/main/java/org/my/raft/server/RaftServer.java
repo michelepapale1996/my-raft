@@ -29,9 +29,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class RaftServer {
 
     private static final Logger logger = LoggerFactory.getLogger(RaftServer.class);
-    private Scheduler scheduler;
-    private RequestExecutor requestExecutor;
-    private ClusterState clusterState;
+    private final Scheduler scheduler;
+    private final RequestExecutor requestExecutor;
+    private final ClusterState clusterState;
 
     // fields used by all servers
     private final UUID uuid = UUID.randomUUID();
@@ -56,27 +56,57 @@ public class RaftServer {
 
     // fields used by followers and candidates
     private volatile Optional<String> votedFor = Optional.empty();
-    private static final AtomicBoolean receivedHeartbeat = new AtomicBoolean(false);
+    private final AtomicBoolean receivedHeartbeat = new AtomicBoolean(false);
 
-
-    public void setRequestExecutor(RequestExecutor requestExecutor) {
+    private RaftServer(Scheduler scheduler, RequestExecutor requestExecutor, ClusterState clusterState) {
+        this.scheduler = scheduler;
         this.requestExecutor = requestExecutor;
+        this.clusterState = clusterState;
+    }
+
+    public static RaftServerBuilder builder() {
+        return new RaftServerBuilder();
+    }
+
+    public static class RaftServerBuilder {
+        private Scheduler scheduler;
+        private RequestExecutor requestExecutor;
+        private ClusterState clusterState;
+
+        public RaftServerBuilder withScheduler(Scheduler scheduler) {
+            this.scheduler = scheduler;
+            return this;
+        }
+
+        public RaftServerBuilder withRequestExecutor(RequestExecutor requestExecutor) {
+            this.requestExecutor = requestExecutor;
+            return this;
+        }
+
+        public RaftServerBuilder withClusterState(ClusterState clusterState) {
+            this.clusterState = clusterState;
+            return this;
+        }
+
+        public RaftServer build() {
+            assert clusterState != null;
+            assert scheduler != null;
+            assert requestExecutor != null;
+
+            // todo: add a checker to perform assertions as:
+            // - the cluster state is not empty
+            // - the requestExecutor contains all the servers in the cluster state
+
+            return new RaftServer(this.scheduler, this.requestExecutor, this.clusterState);
+        }
     }
 
     public RequestExecutor getRequestExecutor() {
         return requestExecutor;
     }
 
-    public void setClusterState(ClusterState clusterState) {
-        this.clusterState = clusterState;
-    }
-
     public ClusterState getClusterState() {
         return clusterState;
-    }
-
-    public void setScheduler(Scheduler scheduler) {
-        this.scheduler = scheduler;
     }
 
     public String getUuid() {
@@ -87,15 +117,22 @@ public class RaftServer {
         return currentTerm.get();
     }
 
-    private void setCurrentTerm(int term) {
-        currentTerm.set(term);
+    Log getLog() {
+        return log;
+    }
+
+    public ServerState getServerState() {
+        ServerState serverState = ServerState.of(uuid, log, status, stateMachine, currentTerm.get(),
+                commitIndex.get(), lastApplied.get(), nextIndexByHost, matchIndexByHost);
+        logger.info("Current ServerState: {}", serverState);
+        return serverState;
     }
 
     boolean isLeader() {
         return status == ServerRole.LEADER;
     }
 
-    private void switchToFollower() {
+    void switchToFollower() {
         status = ServerRole.FOLLOWER;
         scheduler.stopSendingHeartbeats();
     }
@@ -115,38 +152,35 @@ public class RaftServer {
             matchIndexByHost.put(serverId, -1);
         }
 
-        scheduler.startSendingHeartbeats();
-    }
-
-    boolean hasReceivedHeartbeat() {
-        return receivedHeartbeat.get();
-    }
-
-    void resetReceivedHeartbeat() {
-        receivedHeartbeat.set(false);
-    }
-
-    Log getLog() {
-        return log;
-    }
-
-    public ServerState getServerState() {
-        ServerState serverState = ServerState.of(uuid, log, status, stateMachine, currentTerm.get(),
-                commitIndex.get(), lastApplied.get(), nextIndexByHost, matchIndexByHost);
-        logger.info("Current ServerState: {}", serverState);
-        return serverState;
+        scheduler.startSendingHeartbeats(() -> {
+            try {
+                logger.info("Sending heartbeats to followers...");
+                this.triggerHeartbeat();
+            } catch (Exception e) {
+                logger.error("Error while sending heartbeats", e);
+            }
+        });
     }
 
     public void start() {
-        assert clusterState != null;
-        assert scheduler != null;
-        assert requestExecutor != null;
+        scheduler.startLeaderElectionHandler(() -> {
+            try {
+                // if I'm the leader, I don't need to trigger an election
+                if (this.isLeader()) {
+                    logger.info("I'm the leader, no need to trigger an election");
+                    return;
+                }
 
-        // todo: add a checker to perform assertions as:
-        // - the cluster state is not empty
-        // - the requestExecutor contains all the servers in the cluster state
-
-        scheduler.startLeaderElectionHandler();
+                if (!this.receivedHeartbeat.get()) {
+                    logger.info("Starting election since I've not received the heartbeat...");
+                    LeaderElectionHandler leaderElectionHandler = new LeaderElectionHandler(this);
+                    leaderElectionHandler.triggerElection();
+                }
+                receivedHeartbeat.set(false);
+            } catch (Exception e) {
+                logger.error("Error while running leader election handler", e);
+            }
+        });
     }
 
     public void setStateMachineCommand(StateMachineCommand command) {
@@ -161,17 +195,11 @@ public class RaftServer {
         triggerHeartbeat();
 
         try {
-            // block thread till lastApplied is not set to currentTerm
-            if (log.size() == 0) {
-                throw new IllegalStateException("Last log entry is not present when setting a value");
-            }
-
+            // todo - this is a blocking operation to wait before returning. It should be replaced with a more efficient mechanism
             while (lastApplied.get() != offset) {
                 logger.info("Waiting for lastApplied to be set to {}", offset);
                 Thread.sleep(500);
             }
-
-
         } catch (Exception e) {
             logger.error("Error sending append entries", e);
         }
@@ -273,7 +301,7 @@ public class RaftServer {
                     if (maxTerm > this.currentTerm.get()) {
                         logger.info("Received heartbeat response with a higher term. I will become a follower");
                         this.switchToFollower();
-                        this.setCurrentTerm(maxTerm);
+                        this.currentTerm.set(maxTerm);
                     } else {
 
                         for (Map.Entry<String, AppendEntriesResponse> entry : responsesByServer.entrySet()) {
@@ -340,7 +368,7 @@ public class RaftServer {
         // in all other cases, I'm a follower that has received either a heartbeat or an append entries request
 
         this.switchToFollower(); // if I was a candidate I will become a follower
-        this.setCurrentTerm(appendEntriesRequest.term());
+        this.currentTerm.set(appendEntriesRequest.term());
 
         receivedHeartbeat.set(true);
 
@@ -392,7 +420,7 @@ public class RaftServer {
         if ((votedForOptional.isEmpty() || votedForOptional.get().equals(requestVoteRequest.candidateId())) &&
                 (requestVoteRequest.lastLogIndex() >= this.log.size() || this.log.entryAt(requestVoteRequest.lastLogIndex()).term() == requestVoteRequest.lastLogTerm())) {
             this.switchToFollower();
-            this.setCurrentTerm(requestVoteRequest.term());
+            this.currentTerm.set(requestVoteRequest.term());
             this.votedFor = Optional.of(requestVoteRequest.candidateId());
             return new RequestVoteResponse(requestVoteRequest.term(), true);
         }
@@ -400,14 +428,16 @@ public class RaftServer {
     }
 
     private void applyCommandToStateMachine() {
-        // If commitIndex > lastApplied: increment lastApplied, apply log[lastApplied] to state machine
-        if (commitIndex.get() > lastApplied.get()) {
-            for (int i = lastApplied.get() + 1; i <= commitIndex.get(); i++) {
+        int lastApplied = this.lastApplied.get();
+        int commitIndex = this.commitIndex.get();
+
+        if (commitIndex > lastApplied) {
+            for (int i = lastApplied + 1; i <= commitIndex; i++) {
                 LogEntry logEntry = log.entryAt(i);
                 logger.info("Applying command {} on this server...", logEntry.command());
                 stateMachine.apply(logEntry.command());
             }
-            lastApplied.set(commitIndex.get());
+            this.lastApplied.set(commitIndex);
         }
     }
 
